@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Normal Mode Bar -->
+    <RelativeLayout
+        android:id="@+id/normal_mode_bar"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:background="#FF333333"
+        android:padding="8dp">
+
+        <Button
+            android:id="@+id/float_toggle_button"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_alignParentEnd="true"
+            android:text="Float"
+            android:textColor="#FFFFFF"
+            android:background="?android:attr/selectableItemBackground" />
+    </RelativeLayout>
+
+    <!-- Keyboard - without key preview -->
+    <example.android.package2.LatinKeyboardView
+        android:id="@+id/keyboard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true" />
+
+</LinearLayout>

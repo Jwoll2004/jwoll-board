@@ -30,6 +30,7 @@ import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.CompletionInfo;
@@ -52,6 +53,7 @@ import android.util.Log;
 import android.graphics.PixelFormat;
 import android.view.Gravity;
 import android.content.Intent;
+import android.widget.LinearLayout;
 
 /**
  * Example of writing an input method for a soft keyboard.  This code is
@@ -74,6 +76,11 @@ public class SoftKeyboard extends InputMethodService
     static final boolean PROCESS_HARD_KEYS = true;
 
     // Original fields
+
+    // Add these fields at the top of the class
+    private boolean isFloatingMode = false;
+    private View mNormalModeBar;
+
     private InputMethodManager mInputMethodManager;
     private LatinKeyboardView mInputView;
     private CandidateView mCandidateView;
@@ -96,9 +103,15 @@ public class SoftKeyboard extends InputMethodService
     private WindowManager overlayWindowManager;
     private View overlayView;
     private WindowManager.LayoutParams overlayParams;
-    private boolean isFloatingMode = false;
     private boolean isOverlayVisible = false;
     private LatinKeyboardView mOverlayKeyboardView; // For the overlay keyboard
+
+    private LatinKeyboard mNormalQwertyKeyboard;
+    private LatinKeyboard mNormalSymbolsKeyboard;
+    private LatinKeyboard mNormalSymbolsShiftedKeyboard;
+    private LatinKeyboard mFloatingQwertyKeyboard;
+    private LatinKeyboard mFloatingSymbolsKeyboard;
+    private LatinKeyboard mFloatingSymbolsShiftedKeyboard;
 
 
     /**
@@ -147,20 +160,30 @@ public class SoftKeyboard extends InputMethodService
      * This is the point where you can do all of your UI initialization.  It
      * is called after creation and any configuration change.
      */
-    @Override public void onInitializeInterface() {
+    @Override
+    public void onInitializeInterface() {
         final Context displayContext = getDisplayContext();
 
-        if (mQwertyKeyboard != null) {
-            // Configuration changes can happen after the keyboard gets recreated,
-            // so we need to be able to re-build the keyboards if the available
-            // space has changed.
-            int displayWidth = getMaxWidth();
-            if (displayWidth == mLastDisplayWidth) return;
-            mLastDisplayWidth = displayWidth;
+        int displayWidth = getMaxWidth();
+        if (mQwertyKeyboard != null && displayWidth == mLastDisplayWidth) {
+            return;
         }
-        mQwertyKeyboard = new LatinKeyboard(displayContext, R.xml.qwerty);
-        mSymbolsKeyboard = new LatinKeyboard(displayContext, R.xml.symbols);
-        mSymbolsShiftedKeyboard = new LatinKeyboard(displayContext, R.xml.symbols_shift);
+        mLastDisplayWidth = displayWidth;
+
+        // Create separate keyboard instances for normal and floating modes
+        mNormalQwertyKeyboard = new LatinKeyboard(displayContext, R.xml.qwerty);
+        mNormalSymbolsKeyboard = new LatinKeyboard(displayContext, R.xml.symbols);
+        mNormalSymbolsShiftedKeyboard = new LatinKeyboard(displayContext, R.xml.symbols_shift);
+
+        mFloatingQwertyKeyboard = new LatinKeyboard(displayContext, R.xml.qwerty);
+        mFloatingSymbolsKeyboard = new LatinKeyboard(displayContext, R.xml.symbols);
+        mFloatingSymbolsShiftedKeyboard = new LatinKeyboard(displayContext, R.xml.symbols_shift);
+
+        // Set initial keyboard to normal mode keyboards
+        mQwertyKeyboard = mNormalQwertyKeyboard;
+        mSymbolsKeyboard = mNormalSymbolsKeyboard;
+        mSymbolsShiftedKeyboard = mNormalSymbolsShiftedKeyboard;
+        mCurKeyboard = mQwertyKeyboard;
     }
 
     /**
@@ -171,63 +194,203 @@ public class SoftKeyboard extends InputMethodService
      */
     @Override
     public View onCreateInputView() {
-        if (canDrawOverlays()) {
-            if (createFloatingKeyboard()) {
-                isFloatingMode = true;
-                // Return minimal view for IME window
-                return new View(this);
-            }
+        // Always create fresh view to ensure proper sizing
+        if (isFloatingMode) {
+            // In floating mode, return minimal view
+            View minimalView = new View(this);
+            minimalView.setLayoutParams(new ViewGroup.LayoutParams(1, 1));
+            return minimalView;
         } else {
-            requestOverlayPermission();
+            // Normal mode - create full keyboard
+            return createNormalKeyboard();
         }
-
-        // Fallback to original implementation
-        return createNormalKeyboard();
     }
 
     private View createNormalKeyboard() {
-        View floatingLayout = getLayoutInflater().inflate(R.layout.floating_keyboard, null);
+        Log.d(TAG, "=== createNormalKeyboard START ===");
 
-        View dragHandle = floatingLayout.findViewById(R.id.drag_handle);
-        mInputView = floatingLayout.findViewById(R.id.keyboard);
+        View normalLayout = getLayoutInflater().inflate(R.layout.normal_keyboard_layout, null);
+
+        // Get screen width for debugging
+        WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        Display display = wm.getDefaultDisplay();
+        android.graphics.Point size = new android.graphics.Point();
+        display.getSize(size);
+        Log.d(TAG, "Screen width: " + size.x);
+
+        // Force the layout to use full width
+        normalLayout.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+
+        mNormalModeBar = normalLayout.findViewById(R.id.normal_mode_bar);
+        mInputView = normalLayout.findViewById(R.id.keyboard);
+
+        // Log the current keyboard view dimensions
+        mInputView.post(() -> {
+            Log.d(TAG, "Keyboard view width after creation: " + mInputView.getWidth());
+            Log.d(TAG, "Keyboard view measured width: " + mInputView.getMeasuredWidth());
+            Log.d(TAG, "Parent layout width: " + normalLayout.getWidth());
+        });
+
         mInputView.setOnKeyboardActionListener(this);
 
-        dragHandle.setOnTouchListener(new View.OnTouchListener() {
-            float dX, dY;
+        // Ensure keyboard is set to full width
+        mInputView.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
 
-            @Override
-            public boolean onTouch(View view, MotionEvent event) {
-                View parentView = (View) view.getParent();
+        // Log keyboard object info
+        if (mCurKeyboard != null) {
+            Log.d(TAG, "Current keyboard: " + mCurKeyboard.toString());
+            Log.d(TAG, "Current keyboard width: " + mCurKeyboard.getMinWidth());
+        }
 
-                Log.d(TAG, "Normal keyboard touch: " + event.getAction() + " at (" + event.getRawX() + ", " + event.getRawY() + ")");
+        View floatToggleButton = normalLayout.findViewById(R.id.float_toggle_button);
+        floatToggleButton.setOnClickListener(v -> {
+            Log.d(TAG, "Switching to floating mode");
+            switchToFloatingMode();
+        });
 
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        dX = parentView.getX() - event.getRawX();
-                        dY = parentView.getY() - event.getRawY();
-                        return true;
+        Log.d(TAG, "=== createNormalKeyboard END ===");
+        return normalLayout;
+    }
 
-                    case MotionEvent.ACTION_MOVE:
-                        float newX = event.getRawX() + dX;
-                        float newY = event.getRawY() + dY;
+    private void hideKeyboard() {
+        if (mInputView != null) {
+            mInputView.setVisibility(View.GONE);
+        }
+        setCandidatesViewShown(false);
+    }
 
-                        Log.d(TAG, "Normal keyboard moving to: (" + newX + ", " + newY + ")");
+    private void switchToFloatingMode() {
+        isFloatingMode = true;
 
-                        parentView.animate()
-                                .x(newX)
-                                .y(newY)
-                                .setDuration(0)
-                                .start();
-                        return true;
+        // Hide the normal keyboard view
+        if (mInputView != null) {
+            mInputView.setVisibility(View.GONE);
+        }
 
-                    case MotionEvent.ACTION_UP:
-                        return true;
-                }
-                return false;
+        // Request to hide the IME window
+        requestHideSelf(0);
+
+        // Show floating keyboard
+        if (canDrawOverlays()) {
+            // Small delay to ensure IME is hidden before showing overlay
+            mInputView.postDelayed(() -> showFloatingKeyboard(), 100);
+        } else {
+            requestOverlayPermission();
+            isFloatingMode = false; // Reset if no permission
+        }
+    }
+
+    private void switchToNormalMode() {
+        Log.d(TAG, "=== switchToNormalMode START ===");
+        isFloatingMode = false;
+        hideFloatingKeyboard();
+
+        // Log current keyboard state
+        Log.d(TAG, "Before switch - mCurKeyboard: " + (mCurKeyboard != null ? mCurKeyboard.toString() : "null"));
+        Log.d(TAG, "Before switch - keyboard min width: " + (mCurKeyboard != null ? mCurKeyboard.getMinWidth() : "null"));
+
+        // Switch to the correct normal keyboard based on current type
+        if (mCurKeyboard == mFloatingQwertyKeyboard || mCurKeyboard == mQwertyKeyboard) {
+            mCurKeyboard = mNormalQwertyKeyboard;
+            mQwertyKeyboard = mNormalQwertyKeyboard;
+        } else if (mCurKeyboard == mFloatingSymbolsKeyboard || mCurKeyboard == mSymbolsKeyboard) {
+            mCurKeyboard = mNormalSymbolsKeyboard;
+            mSymbolsKeyboard = mNormalSymbolsKeyboard;
+        } else if (mCurKeyboard == mFloatingSymbolsShiftedKeyboard || mCurKeyboard == mSymbolsShiftedKeyboard) {
+            mCurKeyboard = mNormalSymbolsShiftedKeyboard;
+            mSymbolsShiftedKeyboard = mNormalSymbolsShiftedKeyboard;
+        }
+
+        Log.d(TAG, "After switch - mCurKeyboard: " + mCurKeyboard.toString());
+        Log.d(TAG, "After switch - keyboard min width: " + mCurKeyboard.getMinWidth());
+
+        // Force recreation of the input view
+        View newInputView = onCreateInputView();
+        setInputView(newInputView);
+
+        // Log the new view dimensions
+        newInputView.post(() -> {
+            Log.d(TAG, "New input view width: " + newInputView.getWidth());
+            Log.d(TAG, "New input view measured width: " + newInputView.getMeasuredWidth());
+            if (mInputView != null) {
+                Log.d(TAG, "mInputView width after setInputView: " + mInputView.getWidth());
             }
         });
-        return floatingLayout;
+
+        // Trigger the keyboard to show
+        EditorInfo currentEditorInfo = getCurrentInputEditorInfo();
+        if (currentEditorInfo != null) {
+            onStartInput(currentEditorInfo, true);
+            onStartInputView(currentEditorInfo, true);
+        }
+
+        Log.d(TAG, "=== switchToNormalMode END ===");
     }
+    private void showFloatingKeyboard() {
+        if (overlayView == null) {
+            createFloatingKeyboard();
+        }
+
+        // Switch to floating keyboard instances
+        if (mCurKeyboard == mNormalQwertyKeyboard || mCurKeyboard == mQwertyKeyboard) {
+            mCurKeyboard = mFloatingQwertyKeyboard;
+            mQwertyKeyboard = mFloatingQwertyKeyboard;
+        } else if (mCurKeyboard == mNormalSymbolsKeyboard || mCurKeyboard == mSymbolsKeyboard) {
+            mCurKeyboard = mFloatingSymbolsKeyboard;
+            mSymbolsKeyboard = mFloatingSymbolsKeyboard;
+        } else if (mCurKeyboard == mNormalSymbolsShiftedKeyboard || mCurKeyboard == mSymbolsShiftedKeyboard) {
+            mCurKeyboard = mFloatingSymbolsShiftedKeyboard;
+            mSymbolsShiftedKeyboard = mFloatingSymbolsShiftedKeyboard;
+        }
+
+        // Update the overlay keyboard view with the floating keyboard
+        if (mOverlayKeyboardView != null) {
+            mOverlayKeyboardView.setKeyboard(mCurKeyboard);
+        }
+
+        if (overlayView != null && overlayWindowManager != null && !isOverlayVisible) {
+            // Position at screen center
+            Display display = overlayWindowManager.getDefaultDisplay();
+            android.graphics.Point size = new android.graphics.Point();
+            display.getSize(size);
+
+            // Set to 80% of screen width for floating mode
+            int keyboardWidth = (int)(size.x * 0.8);
+
+            // Update params with specific width
+            overlayParams.width = keyboardWidth;
+            overlayParams.height = WindowManager.LayoutParams.WRAP_CONTENT;
+
+            // Center position
+            overlayParams.x = (size.x - keyboardWidth) / 2;
+            overlayParams.y = size.y / 2 - 200;
+
+            try {
+                overlayWindowManager.addView(overlayView, overlayParams);
+                isOverlayVisible = true;
+                Log.d(TAG, "Floating keyboard shown at center with width: " + keyboardWidth);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to show floating keyboard", e);
+            }
+        }
+    }
+    private void hideFloatingKeyboard() {
+        if (overlayView != null && overlayWindowManager != null && isOverlayVisible) {
+            try {
+                overlayWindowManager.removeView(overlayView);
+                isOverlayVisible = false;
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to hide floating keyboard", e);
+            }
+        }
+    }
+
 
     private boolean createFloatingKeyboard() {
         try {
@@ -257,46 +420,31 @@ public class SoftKeyboard extends InputMethodService
 
     private void createOverlayView() {
         try {
-            // Try to inflate the custom layout first
             overlayView = getLayoutInflater().inflate(R.layout.floating_keyboard_overlay, null);
             Log.d(TAG, "Successfully inflated floating_keyboard_overlay layout");
 
-            // Set up the keyboard within the overlay
+            // Set up the keyboard
             mOverlayKeyboardView = overlayView.findViewById(R.id.keyboard);
             if (mOverlayKeyboardView != null) {
                 mOverlayKeyboardView.setOnKeyboardActionListener(this);
-                // Initialize with current keyboard
                 if (mCurKeyboard != null) {
                     mOverlayKeyboardView.setKeyboard(mCurKeyboard);
                 } else if (mQwertyKeyboard != null) {
                     mOverlayKeyboardView.setKeyboard(mQwertyKeyboard);
                 }
-                Log.d(TAG, "Overlay keyboard configured with keyboard: " + (mCurKeyboard != null ? "current" : "qwerty"));
-            } else {
-                Log.e(TAG, "Failed to find keyboard view in overlay layout");
             }
 
-            // Add close button functionality if it exists
-            try {
-                View closeButton = overlayView.findViewById(R.id.close_button);
-                if (closeButton != null) {
-                    closeButton.setOnClickListener(v -> {
-                        Log.d(TAG, "Close button clicked");
-                        handleClose();
-                    });
-                    Log.d(TAG, "Close button listener set");
-                }
-            } catch (Exception e) {
-                Log.d(TAG, "No close button found or failed to set listener");
+            // Add normal mode toggle button functionality
+            View normalToggleButton = overlayView.findViewById(R.id.normal_toggle_button);
+            if (normalToggleButton != null) {
+                normalToggleButton.setOnClickListener(v -> {
+                    Log.d(TAG, "Switching to normal mode");
+                    switchToNormalMode();
+                });
             }
 
         } catch (Exception e) {
-            // Simple fallback - create basic overlay
-            overlayView = new View(this);
-            overlayView.setBackgroundColor(0xFF333333); // Dark gray
-            overlayView.setMinimumWidth(300);
-            overlayView.setMinimumHeight(200);
-            mOverlayKeyboardView = null;
+            Log.e(TAG, "Error creating overlay view", e);
         }
     }
 
@@ -304,13 +452,10 @@ public class SoftKeyboard extends InputMethodService
         int layoutFlag;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             layoutFlag = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
-            Log.d(TAG, "Using TYPE_APPLICATION_OVERLAY");
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             layoutFlag = WindowManager.LayoutParams.TYPE_PHONE;
-            Log.d(TAG, "Using TYPE_PHONE");
         } else {
             layoutFlag = WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
-            Log.d(TAG, "Using TYPE_SYSTEM_ALERT");
         }
 
         overlayParams = new WindowManager.LayoutParams(
@@ -318,15 +463,12 @@ public class SoftKeyboard extends InputMethodService
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 layoutFlag,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
-                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS |
                         WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT);
 
         overlayParams.gravity = Gravity.TOP | Gravity.LEFT;
         overlayParams.x = 100;
         overlayParams.y = 200;
-
-        Log.d(TAG, "Overlay params configured: type=" + layoutFlag + ", position=(" + overlayParams.x + "," + overlayParams.y + ")");
     }
 
     private void setupOverlayDrag() {
@@ -468,7 +610,24 @@ public class SoftKeyboard extends InputMethodService
     }
 
     private void setLatinKeyboard(LatinKeyboard nextKeyboard) {
+        Log.d(TAG, "=== setLatinKeyboard START ===");
+        Log.d(TAG, "Setting keyboard: " + nextKeyboard.toString());
+        Log.d(TAG, "Keyboard min width: " + nextKeyboard.getMinWidth());
+
         setActiveKeyboard(nextKeyboard);
+
+        Log.d(TAG, "=== setLatinKeyboard END ===");
+    }
+    @Override
+    public void onComputeInsets(InputMethodService.Insets outInsets) {
+        super.onComputeInsets(outInsets);
+        Log.d(TAG, "=== onComputeInsets ===");
+        Log.d(TAG, "contentTopInsets: " + outInsets.contentTopInsets);
+        Log.d(TAG, "visibleTopInsets: " + outInsets.visibleTopInsets);
+        if (mInputView != null) {
+            Log.d(TAG, "mInputView height: " + mInputView.getHeight());
+            Log.d(TAG, "mInputView width in onComputeInsets: " + mInputView.getWidth());
+        }
     }
 
     /**
@@ -487,16 +646,15 @@ public class SoftKeyboard extends InputMethodService
      * bound to the client, and are now receiving all of the detailed information
      * about the target of our edits.
      */
-    @Override public void onStartInput(EditorInfo attribute, boolean restarting) {
+    @Override
+    public void onStartInput(EditorInfo attribute, boolean restarting) {
         super.onStartInput(attribute, restarting);
 
-        // Reset our state.  We want to do this even if restarting, because
-        // the underlying state of the text editor could have changed in any way.
+        // Reset composing state
         mComposing.setLength(0);
         updateCandidates();
 
         if (!restarting) {
-            // Clear shift states.
             mMetaState = 0;
         }
 
@@ -504,73 +662,43 @@ public class SoftKeyboard extends InputMethodService
         mCompletionOn = false;
         mCompletions = null;
 
-        // We are now going to initialize our state based on the type of
-        // text being edited.
+        // Determine keyboard type based on input type
         switch (attribute.inputType & InputType.TYPE_MASK_CLASS) {
             case InputType.TYPE_CLASS_NUMBER:
             case InputType.TYPE_CLASS_DATETIME:
-                // Numbers and dates default to the symbols keyboard, with
-                // no extra features.
-                mCurKeyboard = mSymbolsKeyboard;
+                mCurKeyboard = isFloatingMode ? mFloatingSymbolsKeyboard : mNormalSymbolsKeyboard;
                 break;
-
             case InputType.TYPE_CLASS_PHONE:
-                // Phones will also default to the symbols keyboard, though
-                // often you will want to have a dedicated phone keyboard.
-                mCurKeyboard = mSymbolsKeyboard;
+                mCurKeyboard = isFloatingMode ? mFloatingSymbolsKeyboard : mNormalSymbolsKeyboard;
                 break;
-
             case InputType.TYPE_CLASS_TEXT:
-                // This is general text editing.  We will default to the
-                // normal alphabetic keyboard, and assume that we should
-                // be doing predictive text (showing candidates as the
-                // user types).
-                mCurKeyboard = mQwertyKeyboard;
+                mCurKeyboard = isFloatingMode ? mFloatingQwertyKeyboard : mNormalQwertyKeyboard;
                 mPredictionOn = true;
 
-                // We now look for a few special variations of text that will
-                // modify our behavior.
                 int variation = attribute.inputType & InputType.TYPE_MASK_VARIATION;
                 if (variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
                         variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD) {
-                    // Do not display predictions / what the user is typing
-                    // when they are entering a password.
                     mPredictionOn = false;
                 }
 
                 if (variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
                         || variation == InputType.TYPE_TEXT_VARIATION_URI
                         || variation == InputType.TYPE_TEXT_VARIATION_FILTER) {
-                    // Our predictions are not useful for e-mail addresses
-                    // or URIs.
                     mPredictionOn = false;
                 }
 
                 if ((attribute.inputType & InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE) != 0) {
-                    // If this is an auto-complete text view, then our predictions
-                    // will not be shown and instead we will allow the editor
-                    // to supply their own.  We only show the editor's
-                    // candidates when in fullscreen mode, otherwise relying
-                    // own it displaying its own UI.
                     mPredictionOn = false;
                     mCompletionOn = isFullscreenMode();
                 }
 
-                // We also want to look at the current state of the editor
-                // to decide whether our alphabetic keyboard should start out
-                // shifted.
                 updateShiftKeyState(attribute);
                 break;
-
             default:
-                // For all unknown input types, default to the alphabetic
-                // keyboard with no special features.
-                mCurKeyboard = mQwertyKeyboard;
+                mCurKeyboard = isFloatingMode ? mFloatingQwertyKeyboard : mNormalQwertyKeyboard;
                 updateShiftKeyState(attribute);
         }
 
-        // Update the label on the enter key, depending on what the application
-        // says it will do.
         mCurKeyboard.setImeOptions(getResources(), attribute.imeOptions);
     }
 
@@ -602,24 +730,52 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
-    @Override public void onStartInputView(EditorInfo attribute, boolean restarting) {
+    @Override
+    public void onStartInputView(EditorInfo attribute, boolean restarting) {
         super.onStartInputView(attribute, restarting);
 
-        Log.d(TAG, "=== onStartInputView called, isFloatingMode: " + isFloatingMode + " ===");
+        Log.d(TAG, "=== onStartInputView START ===");
+        Log.d(TAG, "isFloatingMode: " + isFloatingMode);
+        Log.d(TAG, "restarting: " + restarting);
 
         if (isFloatingMode) {
-            Log.d(TAG, "Showing overlay for input");
-            showOverlay();
+            if (mInputView != null) {
+                mInputView.setVisibility(View.GONE);
+            }
+            Log.d(TAG, "=== onStartInputView END (floating mode) ===");
             return;
         }
 
-        // Apply the selected keyboard to the input view.
+        // Normal mode - show keyboard
+        if (mInputView != null) {
+            mInputView.setVisibility(View.VISIBLE);
+            Log.d(TAG, "mInputView visibility set to VISIBLE");
+            Log.d(TAG, "mInputView width: " + mInputView.getWidth());
+            Log.d(TAG, "mInputView parent: " + mInputView.getParent());
+        }
+
+        // Apply the selected keyboard to the input view
         setLatinKeyboard(mCurKeyboard);
+
         if (mInputView != null) {
             mInputView.closing();
             final InputMethodSubtype subtype = mInputMethodManager.getCurrentInputMethodSubtype();
             mInputView.setSubtypeOnSpaceKey(subtype);
+
+            // Force layout update
+            mInputView.requestLayout();
+
+            // Log final dimensions
+            mInputView.post(() -> {
+                Log.d(TAG, "Final mInputView width in onStartInputView: " + mInputView.getWidth());
+                Keyboard kb = mInputView.getKeyboard();
+                if (kb != null) {
+                    Log.d(TAG, "Keyboard min width: " + kb.getMinWidth());
+                }
+            });
         }
+
+        Log.d(TAG, "=== onStartInputView END ===");
     }
 
     @Override
@@ -970,32 +1126,59 @@ public class SoftKeyboard extends InputMethodService
         }
 
         Keyboard currentKeyboard = activeKeyboardView.getKeyboard();
-        if (mQwertyKeyboard == currentKeyboard) {
+
+        // Check against the appropriate keyboard set based on mode
+        LatinKeyboard qwertyToCheck = isFloatingMode ? mFloatingQwertyKeyboard : mNormalQwertyKeyboard;
+        LatinKeyboard symbolsToCheck = isFloatingMode ? mFloatingSymbolsKeyboard : mNormalSymbolsKeyboard;
+        LatinKeyboard symbolsShiftedToCheck = isFloatingMode ? mFloatingSymbolsShiftedKeyboard : mNormalSymbolsShiftedKeyboard;
+
+        if (currentKeyboard == qwertyToCheck) {
             // Alphabet keyboard
             checkToggleCapsLock();
             activeKeyboardView.setShifted(mCapsLock || !activeKeyboardView.isShifted());
-        } else if (currentKeyboard == mSymbolsKeyboard) {
-            mSymbolsKeyboard.setShifted(true);
-            setActiveKeyboard(mSymbolsShiftedKeyboard);
-            mSymbolsShiftedKeyboard.setShifted(true);
-        } else if (currentKeyboard == mSymbolsShiftedKeyboard) {
-            mSymbolsShiftedKeyboard.setShifted(false);
-            setActiveKeyboard(mSymbolsKeyboard);
-            mSymbolsKeyboard.setShifted(false);
+        } else if (currentKeyboard == symbolsToCheck) {
+            setActiveKeyboard(symbolsShiftedToCheck);
+        } else if (currentKeyboard == symbolsShiftedToCheck) {
+            setActiveKeyboard(symbolsToCheck);
         }
     }
-    // Add this new method to handle keyboard switching in both modes:
     private void setActiveKeyboard(LatinKeyboard nextKeyboard) {
         final boolean shouldSupportLanguageSwitchKey =
                 mInputMethodManager.shouldOfferSwitchingToNextInputMethod(getToken());
+
+        // Determine which keyboard set to use based on mode
+        if (isFloatingMode) {
+            // Map to floating keyboards
+            if (nextKeyboard == mNormalQwertyKeyboard || nextKeyboard == mQwertyKeyboard) {
+                nextKeyboard = mFloatingQwertyKeyboard;
+                mQwertyKeyboard = mFloatingQwertyKeyboard;
+            } else if (nextKeyboard == mNormalSymbolsKeyboard || nextKeyboard == mSymbolsKeyboard) {
+                nextKeyboard = mFloatingSymbolsKeyboard;
+                mSymbolsKeyboard = mFloatingSymbolsKeyboard;
+            } else if (nextKeyboard == mNormalSymbolsShiftedKeyboard || nextKeyboard == mSymbolsShiftedKeyboard) {
+                nextKeyboard = mFloatingSymbolsShiftedKeyboard;
+                mSymbolsShiftedKeyboard = mFloatingSymbolsShiftedKeyboard;
+            }
+        } else {
+            // Map to normal keyboards
+            if (nextKeyboard == mFloatingQwertyKeyboard || nextKeyboard == mQwertyKeyboard) {
+                nextKeyboard = mNormalQwertyKeyboard;
+                mQwertyKeyboard = mNormalQwertyKeyboard;
+            } else if (nextKeyboard == mFloatingSymbolsKeyboard || nextKeyboard == mSymbolsKeyboard) {
+                nextKeyboard = mNormalSymbolsKeyboard;
+                mSymbolsKeyboard = mNormalSymbolsKeyboard;
+            } else if (nextKeyboard == mFloatingSymbolsShiftedKeyboard || nextKeyboard == mSymbolsShiftedKeyboard) {
+                nextKeyboard = mNormalSymbolsShiftedKeyboard;
+                mSymbolsShiftedKeyboard = mNormalSymbolsShiftedKeyboard;
+            }
+        }
+
         nextKeyboard.setLanguageSwitchKeyVisibility(shouldSupportLanguageSwitchKey);
 
         if (isFloatingMode && mOverlayKeyboardView != null) {
             mOverlayKeyboardView.setKeyboard(nextKeyboard);
-            Log.d(TAG, "Set keyboard on overlay view");
         } else if (mInputView != null) {
             mInputView.setKeyboard(nextKeyboard);
-            Log.d(TAG, "Set keyboard on normal input view");
         }
 
         mCurKeyboard = nextKeyboard;
@@ -1023,13 +1206,18 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
+    // Update handleClose to always return to normal mode
     private void handleClose() {
         commitTyped(getCurrentInputConnection());
-        requestHideSelf(0);
-        if (mInputView != null) {
-            mInputView.closing();
+
+        if (isFloatingMode) {
+            switchToNormalMode();
+        } else {
+            requestHideSelf(0);
+            if (mInputView != null) {
+                mInputView.closing();
+            }
         }
-        hideOverlay();
     }
 
     private IBinder getToken() {

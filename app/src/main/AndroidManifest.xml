@@ -23,11 +23,6 @@
                 android:resource="@xml/method" />
         </service>
 
-        <!-- Floating Keyboard Service -->
-        <service
-            android:name="example.android.package2.FloatingKeyboardService"
-            android:exported="false" />
-
         <!-- Settings Activity -->
         <activity
             android:name="example.android.package2.ImePreferences"

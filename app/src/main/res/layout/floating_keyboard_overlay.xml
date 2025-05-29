@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@drawable/floating_keyboard_bg"
     android:elevation="8dp">
 
-    <!-- Drag Handle -->
+    <!-- Floating Mode Bar with Drag Handle -->
     <RelativeLayout
         android:id="@+id/drag_handle"
         android:layout_width="match_parent"
@@ -23,15 +22,14 @@
             android:textSize="16sp"
             android:layout_centerInParent="true" />
 
-        <ImageButton
-            android:id="@+id/close_button"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+        <Button
+            android:id="@+id/normal_toggle_button"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
             android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_close_clear_cancel"
-            app:tint="#FFFFFF" />
+            android:text="Normal"
+            android:textColor="#FFFFFF"
+            android:background="?android:attr/selectableItemBackground" />
     </RelativeLayout>
 
     <!-- Keyboard -->
