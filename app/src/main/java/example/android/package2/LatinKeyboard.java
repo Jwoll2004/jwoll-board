@@ -37,7 +37,7 @@ public class LatinKeyboard extends Keyboard {
     private Key mModeChangeKey;
     /**
      * Stores the current state of the language switch key (a.k.a. globe key). This should be
-     * visible while {@link InputMethodManager#shouldOfferSwitchingToNextInputMethod(IBinder)}
+     * visible while {@link \InputMethodManager#shouldOfferSwitchingToNextInputMethod(IBinder)}
      * returns true. When this key becomes invisible, its width will be shrunk to zero.
      */
     private Key mLanguageSwitchKey;
