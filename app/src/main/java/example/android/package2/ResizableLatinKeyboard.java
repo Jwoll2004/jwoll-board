@@ -1,7 +1,6 @@
 package example.android.package2;
 
 import android.content.Context;
-import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.Keyboard;
 import android.util.Log;
@@ -15,11 +14,6 @@ import java.util.Map;
 public class ResizableLatinKeyboard extends LatinKeyboard {
     private static final String TAG = "ResizableLatinKeyboard";
     private float mScaleFactor = 1.0f;
-    private Context mContext;
-
-    // Store references to the scaled saved keys
-    private Key mScaledSavedModeChangeKey;
-    private Key mScaledSavedLanguageSwitchKey;
 
     // Store key properties instead of Key objects
     private static class KeyProperties {
@@ -36,14 +30,9 @@ public class ResizableLatinKeyboard extends LatinKeyboard {
 
     private KeyProperties mScaledModeChangeKey;
     private KeyProperties mScaledLanguageSwitchKey;
-
-
-    public ResizableLatinKeyboard(Context context, int xmlLayoutResId) {
-        super(context, xmlLayoutResId);
-        mContext = context;
-    }
-
     // 2. Update the ResizableLatinKeyboard constructor to add logging
+    // Update the constructor to use the enhanced resizing
+    // Enhanced constructor that uses the new distribution method
     public ResizableLatinKeyboard(Context context, int xmlLayoutResId, int targetWidth) {
         super(context, xmlLayoutResId);
 
@@ -60,11 +49,13 @@ public class ResizableLatinKeyboard extends LatinKeyboard {
         }
     }
 
-
-    // Update the resizeKeyboard method to save the scale factor
+    // Enhanced resizeKeyboard method with gap fixing
     private void resizeKeyboard(int targetWidth) {
         Log.d(TAG, "=== RESIZING KEYBOARD ===");
         Log.d(TAG, "Original width: " + getMinWidth() + ", Target width: " + targetWidth);
+
+        // Analyze gaps before scaling
+        analyzeKeyGaps("BEFORE_SCALING");
 
         List<Key> keys = getKeys();
         if (keys.isEmpty()) {
@@ -73,36 +64,21 @@ public class ResizableLatinKeyboard extends LatinKeyboard {
         }
 
         float scaleX = (float) targetWidth / getMinWidth();
-        mScaleFactor = scaleX; // Store the scale factor
+        mScaleFactor = scaleX;
         Log.d(TAG, "Scale factor: " + scaleX);
 
-        // Log before scaling
-        Log.d(TAG, "Before scaling - sample key positions:");
-        for (int i = Math.max(0, keys.size() - 6); i < keys.size(); i++) {
-            Key key = keys.get(i);
-            Log.d(TAG, String.format("Key %d: x=%d, width=%d", i, key.x, key.width));
-        }
-
-        // Scale all keys
+        // First pass: Scale all keys normally
         for (Key key : keys) {
-            int oldX = key.x;
-            int oldWidth = key.width;
             key.x = (int) (key.x * scaleX);
             key.width = (int) (key.width * scaleX);
-
-            // Log significant changes
-            if (Math.abs(oldX - key.x) > 5 || Math.abs(oldWidth - key.width) > 5) {
-                Log.d(TAG, String.format("Scaled key: x %d->%d, width %d->%d",
-                        oldX, key.x, oldWidth, key.width));
-            }
+            key.gap = 0; // Ensure no gaps
         }
 
-        // Log after scaling
-        Log.d(TAG, "After scaling - sample key positions:");
-        for (int i = Math.max(0, keys.size() - 6); i < keys.size(); i++) {
-            Key key = keys.get(i);
-            Log.d(TAG, String.format("Key %d: x=%d, width=%d", i, key.x, key.width));
-        }
+        // Second pass: Distribute keys evenly row by row to eliminate gaps and fill target width
+        distributeKeysEvenly(targetWidth);
+
+        // Analyze gaps after distribution
+        analyzeKeyGaps("AFTER_DISTRIBUTION");
 
         // Update keyboard dimensions using reflection
         try {
@@ -111,7 +87,7 @@ public class ResizableLatinKeyboard extends LatinKeyboard {
             int oldTotalWidth = totalWidthField.getInt(this);
             totalWidthField.setInt(this, targetWidth);
 
-            // Try both possible field names for display width
+            // Try different possible field names for display width
             try {
                 Field displayWidthField = Keyboard.class.getDeclaredField("mDisplayWidth");
                 displayWidthField.setAccessible(true);
@@ -121,7 +97,6 @@ public class ResizableLatinKeyboard extends LatinKeyboard {
                 Log.d(TAG, String.format("Updated dimensions: totalWidth %d->%d, displayWidth %d->%d",
                         oldTotalWidth, targetWidth, oldDisplayWidth, targetWidth));
             } catch (NoSuchFieldException e) {
-                // Try alternative field name
                 try {
                     Field displayWidthField = Keyboard.class.getDeclaredField("mMinWidth");
                     displayWidthField.setAccessible(true);
@@ -142,7 +117,131 @@ public class ResizableLatinKeyboard extends LatinKeyboard {
 
         Log.d(TAG, "=== RESIZE COMPLETE ===");
     }
+    // New method to distribute keys evenly within each row
+    private void distributeKeysEvenly(int targetWidth) {
+        Log.d(TAG, "=== DISTRIBUTING KEYS EVENLY ===");
 
+        List<List<Key>> rows = getRowKeys();
+
+        for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
+            List<Key> row = rows.get(rowIndex);
+            if (row.isEmpty()) continue;
+
+            Log.d(TAG, "Distributing row " + rowIndex + " with " + row.size() + " keys");
+
+            // Calculate total width needed for this row
+            int totalKeyWidth = 0;
+            for (Key key : row) {
+                totalKeyWidth += key.width;
+            }
+
+            Log.d(TAG, "Row " + rowIndex + " - Total key width: " + totalKeyWidth + ", Target: " + targetWidth);
+
+            // Check if this row should fill the full width
+            // (Most rows should, except maybe some special cases like the second row with offset)
+            boolean shouldFillWidth = shouldRowFillWidth(row, rowIndex);
+            int effectiveTargetWidth = shouldFillWidth ? targetWidth : totalKeyWidth;
+
+            if (shouldFillWidth && totalKeyWidth != targetWidth) {
+                // Distribute keys to fill exact target width
+                distributeRowKeys(row, effectiveTargetWidth, rowIndex);
+            } else {
+                // Just ensure keys are adjacent (no gaps)
+                makeKeysAdjacent(row, rowIndex);
+            }
+        }
+
+        Log.d(TAG, "=== DISTRIBUTION COMPLETE ===");
+    }
+    // Determine if a row should fill the full keyboard width
+    private boolean shouldRowFillWidth(List<Key> row, int rowIndex) {
+        if (row.isEmpty()) return false;
+
+        // Check if the first key starts at x=0 and last key should end at keyboard width
+        Key firstKey = row.get(0);
+        Key lastKey = row.get(row.size() - 1);
+
+        // If first key starts at 0 and row has edge flags, it should fill width
+        boolean startsAtZero = firstKey.x <= 5; // Allow small margin for rounding
+        boolean hasRightEdge = (lastKey.edgeFlags & 2) != 0; // RIGHT edge flag
+
+        Log.d(TAG, "Row " + rowIndex + " - starts at zero: " + startsAtZero + ", has right edge: " + hasRightEdge);
+
+        return startsAtZero && hasRightEdge;
+    }
+
+    // Distribute keys in a row to fill exact target width
+    private void distributeRowKeys(List<Key> row, int targetWidth, int rowIndex) {
+        Log.d(TAG, "Distributing row " + rowIndex + " to fill " + targetWidth + "px");
+
+        if (row.isEmpty()) return;
+
+        // Calculate current total width
+        int currentTotalWidth = 0;
+        for (Key key : row) {
+            currentTotalWidth += key.width;
+        }
+
+        // Calculate how much we need to adjust
+        int widthDifference = targetWidth - currentTotalWidth;
+        Log.d(TAG, "Width difference to distribute: " + widthDifference);
+
+        if (widthDifference == 0) {
+            // Perfect fit, just make adjacent
+            makeKeysAdjacent(row, rowIndex);
+            return;
+        }
+
+        // Distribute the width difference across keys
+        // Prioritize distributing to larger keys (like space bar)
+        List<Key> keysByWidth = new ArrayList<>(row);
+        keysByWidth.sort((a, b) -> Integer.compare(b.width, a.width)); // Largest first
+
+        // Distribute width difference
+        int remainingDifference = widthDifference;
+        for (Key key : keysByWidth) {
+            if (remainingDifference == 0) break;
+
+            // Give larger keys more of the adjustment
+            int adjustment = 0;
+            if (Math.abs(remainingDifference) >= keysByWidth.size()) {
+                adjustment = remainingDifference / keysByWidth.size();
+                if (adjustment == 0) {
+                    adjustment = remainingDifference > 0 ? 1 : -1;
+                }
+            } else {
+                adjustment = remainingDifference > 0 ? 1 : -1;
+            }
+
+            key.width += adjustment;
+            remainingDifference -= adjustment;
+
+            Log.d(TAG, "Adjusted " + getKeyDescription(key) + " width by " + adjustment);
+        }
+
+        // Now position keys to be adjacent
+        makeKeysAdjacent(row, rowIndex);
+    }
+    // Make keys in a row adjacent (no gaps between them)
+    private void makeKeysAdjacent(List<Key> row, int rowIndex) {
+        if (row.size() <= 1) return;
+
+        Log.d(TAG, "Making row " + rowIndex + " keys adjacent");
+
+        // Keep first key position, adjust others
+        for (int i = 1; i < row.size(); i++) {
+            Key prevKey = row.get(i - 1);
+            Key currentKey = row.get(i);
+
+            int newX = prevKey.x + prevKey.width;
+            if (currentKey.x != newX) {
+                Log.d(TAG, "Moved key " + getKeyDescription(currentKey) + " from x=" + currentKey.x + " to x=" + newX);
+                currentKey.x = newX;
+            }
+
+            currentKey.gap = 0; // Ensure no gap
+        }
+    }
 
     private void saveScaledSpecialKeys() {
         Log.d(TAG, "Saving scaled special keys with scale factor: " + mScaleFactor);
@@ -163,109 +262,46 @@ public class ResizableLatinKeyboard extends LatinKeyboard {
         }
     }
 
+    // Enhanced gap analysis for each row
+    private void analyzeKeyGaps(String when) {
+        Log.d(TAG, "=== KEY GAP ANALYSIS " + when + " ===");
 
-    private void updateSavedKeysForScaling() {
-        try {
-            // Access the private saved key fields using reflection
-            Field savedModeChangeKeyField = LatinKeyboard.class.getDeclaredField("mSavedModeChangeKey");
-            savedModeChangeKeyField.setAccessible(true);
-            Key originalSavedModeChangeKey = (Key) savedModeChangeKeyField.get(this);
+        List<List<Key>> rows = getRowKeys();
+        for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
+            List<Key> row = rows.get(rowIndex);
+            Log.d(TAG, "Row " + rowIndex + " (" + row.size() + " keys):");
 
-            Field savedLanguageSwitchKeyField = LatinKeyboard.class.getDeclaredField("mSavedLanguageSwitchKey");
-            savedLanguageSwitchKeyField.setAccessible(true);
-            Key originalSavedLanguageSwitchKey = (Key) savedLanguageSwitchKeyField.get(this);
+            int totalRowWidth = 0;
+            for (int i = 0; i < row.size(); i++) {
+                Key key = row.get(i);
+                String keyDesc = getKeyDescription(key);
 
-            if (originalSavedModeChangeKey != null) {
-                // Create scaled copies of the saved keys
-                mScaledSavedModeChangeKey = createScaledKey(originalSavedModeChangeKey);
-                savedModeChangeKeyField.set(this, mScaledSavedModeChangeKey);
-                Log.d(TAG, "Updated saved mode change key with scaling");
+                if (i == 0) {
+                    Log.d(TAG, String.format("  Key %d: %s | x=%d, w=%d, gap=%d, right=%d",
+                            i, keyDesc, key.x, key.width, key.gap, key.x + key.width));
+                } else {
+                    Key prevKey = row.get(i - 1);
+                    int actualGap = key.x - (prevKey.x + prevKey.width);
+                    Log.d(TAG, String.format("  Key %d: %s | x=%d, w=%d, gap=%d, right=%d | actual_gap_from_prev=%d",
+                            i, keyDesc, key.x, key.width, key.gap, key.x + key.width, actualGap));
+
+                    if (actualGap > 2) {
+                        Log.w(TAG, "    *** VISIBLE GAP DETECTED: " + actualGap + " pixels ***");
+                    }
+                }
+
+                totalRowWidth = Math.max(totalRowWidth, key.x + key.width);
             }
 
-            if (originalSavedLanguageSwitchKey != null) {
-                mScaledSavedLanguageSwitchKey = createScaledKey(originalSavedLanguageSwitchKey);
-                savedLanguageSwitchKeyField.set(this, mScaledSavedLanguageSwitchKey);
-                Log.d(TAG, "Updated saved language switch key with scaling");
+            Log.d(TAG, "  Row total width: " + totalRowWidth + ", Keyboard width: " + getMinWidth());
+
+            // Check if row fills the keyboard width
+            if (totalRowWidth < getMinWidth() - 5) {
+                Log.w(TAG, "  *** ROW DOESN'T FILL KEYBOARD WIDTH: missing " + (getMinWidth() - totalRowWidth) + " pixels ***");
             }
-
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to update saved keys for scaling", e);
         }
-    }
 
-    private Key createScaledKey(Key originalKey) {
-        try {
-            // Get the Row from the original key using reflection
-            Field rowField = Key.class.getDeclaredField("row");
-            rowField.setAccessible(true);
-            Keyboard.Row row = (Keyboard.Row) rowField.get(originalKey);
-
-            // Create a new key using the proper constructor
-            Key scaledKey = new LatinKey(mContext.getResources(), row,
-                    originalKey.x, originalKey.y, null);
-
-            // Copy all available properties from original key
-            scaledKey.codes = originalKey.codes.clone();
-            scaledKey.label = originalKey.label;
-            scaledKey.icon = originalKey.icon;
-            scaledKey.iconPreview = originalKey.iconPreview;
-            scaledKey.popupCharacters = originalKey.popupCharacters;
-            scaledKey.popupResId = originalKey.popupResId;
-            scaledKey.repeatable = originalKey.repeatable;
-            scaledKey.modifier = originalKey.modifier;
-            scaledKey.sticky = originalKey.sticky;
-            scaledKey.edgeFlags = originalKey.edgeFlags;
-
-            // Apply scaling to position and size
-            scaledKey.x = (int) (originalKey.x * mScaleFactor);
-            scaledKey.y = originalKey.y; // Don't scale Y
-            scaledKey.width = (int) (originalKey.width * mScaleFactor);
-            scaledKey.height = originalKey.height; // Don't scale height
-            scaledKey.gap = (int) (originalKey.gap * mScaleFactor);
-
-            Log.d(TAG, "Created scaled key: original width=" + originalKey.width +
-                    ", scaled width=" + scaledKey.width + ", scale=" + mScaleFactor);
-
-            return scaledKey;
-
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to create scaled key", e);
-            // If we can't create a new key, try to modify the original key's copy
-            return createScaledKeyFallback(originalKey);
-        }
-    }
-
-    private Key createScaledKeyFallback(Key originalKey) {
-        try {
-            // Create a simple key copy by cloning using reflection
-            Key scaledKey = originalKey.getClass().newInstance();
-
-            // Copy basic fields
-            scaledKey.codes = originalKey.codes.clone();
-            scaledKey.label = originalKey.label;
-            scaledKey.icon = originalKey.icon;
-            scaledKey.iconPreview = originalKey.iconPreview;
-            scaledKey.popupCharacters = originalKey.popupCharacters;
-            scaledKey.popupResId = originalKey.popupResId;
-            scaledKey.repeatable = originalKey.repeatable;
-            scaledKey.modifier = originalKey.modifier;
-            scaledKey.sticky = originalKey.sticky;
-            scaledKey.edgeFlags = originalKey.edgeFlags;
-
-            // Apply scaling
-            scaledKey.x = (int) (originalKey.x * mScaleFactor);
-            scaledKey.y = originalKey.y;
-            scaledKey.width = (int) (originalKey.width * mScaleFactor);
-            scaledKey.height = originalKey.height;
-            scaledKey.gap = (int) (originalKey.gap * mScaleFactor);
-
-            return scaledKey;
-
-        } catch (Exception e) {
-            Log.e(TAG, "Fallback key creation also failed", e);
-            // Last resort: just return the original key
-            return originalKey;
-        }
+        Log.d(TAG, "=== END GAP ANALYSIS ===");
     }
 
     @Override

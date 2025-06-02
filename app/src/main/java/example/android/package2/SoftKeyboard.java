@@ -1,19 +1,3 @@
-/*
- * Copyright (C) 2008-2009 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package example.android.package2;
 
 import android.app.Dialog;
@@ -55,24 +39,10 @@ import android.view.Gravity;
 import android.content.Intent;
 import android.widget.LinearLayout;
 
-/**
- * Example of writing an input method for a soft keyboard.  This code is
- * focused on simplicity over completeness, so it should in no way be considered
- * to be a complete soft keyboard implementation.  Its purpose is to provide
- * a basic example for how you would get started writing an input method, to
- * be fleshed out as appropriate.
- */
+
 public class SoftKeyboard extends InputMethodService
         implements KeyboardView.OnKeyboardActionListener {
 
-    /**
-     * This boolean indicates the optional example code for performing
-     * processing of hard keys in addition to regular text generation
-     * from on-screen interaction.  It would be used for input methods that
-     * perform language translations (such as converting text entered on
-     * a QWERTY keyboard to Chinese), but may not be used for input methods
-     * that are primarily intended to be used for on-screen text entry.
-     */
     static final boolean PROCESS_HARD_KEYS = true;
 
     // Original fields
@@ -83,7 +53,6 @@ public class SoftKeyboard extends InputMethodService
 
     private InputMethodManager mInputMethodManager;
     private LatinKeyboardView mInputView;
-    private CandidateView mCandidateView;
     private CompletionInfo[] mCompletions;
     private StringBuilder mComposing = new StringBuilder();
     private boolean mPredictionOn;
@@ -113,89 +82,46 @@ public class SoftKeyboard extends InputMethodService
     private LatinKeyboard mFloatingSymbolsKeyboard;
     private LatinKeyboard mFloatingSymbolsShiftedKeyboard;
 
-
-    /**
-     * Main initialization of the input method component.  Be sure to call
-     * to super class.
-     */
     @Override public void onCreate() {
         super.onCreate();
         mInputMethodManager = (InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
         mWordSeparators = getResources().getString(R.string.word_separators);
     }
 
-    /**
-     * Returns the context object whose resources are adjusted to match the metrics of the display.
-     *
-     * Note that before {@link Build.VERSION_CODES#KITKAT}, there is no way to support
-     * multi-display scenarios, so the context object will just return the IME context itself.
-     *
-     * With initiating multi-display APIs from {@link Build.VERSION_CODES#KITKAT}, the
-     * context object has to return with re-creating the display context according the metrics
-     * of the display in runtime.
-     *
-     * Starts from {@link Build.VERSION_CODES#S_V2}, the returning context object has
-     * became to IME context self since it ends up capable of updating its resources internally.
-     *
-     * @see {@link Context#createDisplayContext(Display)}
-     */
     @NonNull Context getDisplayContext() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
-            // createDisplayContext is not available.
             return this;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S_V2) {
-            // IME context sources is now managed by WindowProviderService from Android 12L.
             return this;
         }
-        // An issue in Q that non-activity components Resources / DisplayMetrics in
-        // Context doesn't well updated when the IME window moving to external display.
-        // Currently we do a workaround is to create new display context directly and re-init
-        // keyboard layout with this context.
         final WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         return createDisplayContext(wm.getDefaultDisplay());
     }
 
-    /**
-     * This is the point where you can do all of your UI initialization.  It
-     * is called after creation and any configuration change.
-     */
-    // Replace onInitializeInterface method:
     @Override
     public void onInitializeInterface() {
         final Context displayContext = getDisplayContext();
-        Log.d(TAG, "=== onInitializeInterface START ===");
-        Log.d(TAG, "isFloatingMode: " + isFloatingMode);
 
         int displayWidth = getMaxWidth();
-        Log.d(TAG, "Display width: " + displayWidth);
 
         if (mQwertyKeyboard != null && displayWidth == mLastDisplayWidth && !isFloatingMode) {
-            Log.d(TAG, "Returning early - no display width change and not floating mode");
             return;
         }
         mLastDisplayWidth = displayWidth;
 
         // Create normal mode keyboards with full width
-        Log.d(TAG, "Creating normal mode keyboards with full width: " + displayWidth);
         mNormalQwertyKeyboard = new LatinKeyboard(displayContext, R.xml.qwerty);
         mNormalSymbolsKeyboard = new LatinKeyboard(displayContext, R.xml.symbols);
         mNormalSymbolsShiftedKeyboard = new LatinKeyboard(displayContext, R.xml.symbols_shift);
 
-        Log.d(TAG, "Normal QWERTY keyboard min width: " + mNormalQwertyKeyboard.getMinWidth());
-        Log.d(TAG, "Normal symbols keyboard min width: " + mNormalSymbolsKeyboard.getMinWidth());
-
         // Create floating mode keyboards with reduced width (80% of screen)
-        int floatingWidth = (int)(displayWidth * 0.7f);
-        Log.d(TAG, "Creating floating mode keyboards with reduced width: " + floatingWidth);
+        int floatingWidth = (int)(displayWidth * 0.8f);
 
         // Use ResizableLatinKeyboard for floating keyboards
         mFloatingQwertyKeyboard = new ResizableLatinKeyboard(getApplicationContext(), R.xml.qwerty, floatingWidth);
         mFloatingSymbolsKeyboard = new ResizableLatinKeyboard(getApplicationContext(), R.xml.symbols, floatingWidth);
         mFloatingSymbolsShiftedKeyboard = new ResizableLatinKeyboard(getApplicationContext(), R.xml.symbols_shift, floatingWidth);
-
-        Log.d(TAG, "Floating QWERTY keyboard min width: " + mFloatingQwertyKeyboard.getMinWidth());
-        Log.d(TAG, "Floating symbols keyboard min width: " + mFloatingSymbolsKeyboard.getMinWidth());
 
         // Set initial keyboard based on current mode
         if (isFloatingMode) {
@@ -209,17 +135,8 @@ public class SoftKeyboard extends InputMethodService
             mSymbolsShiftedKeyboard = mNormalSymbolsShiftedKeyboard;
             mCurKeyboard = mNormalQwertyKeyboard;
         }
-
-        Log.d(TAG, "Set current keyboard min width: " + mCurKeyboard.getMinWidth());
-        Log.d(TAG, "=== onInitializeInterface END ===");
     }
 
-    /**
-     * Called by the framework when your view for creating input needs to
-     * be generated.  This will be called the first time your input method
-     * is displayed, and every time it needs to be re-created such as due to
-     * a configuration change.
-     */
     @Override
     public View onCreateInputView() {
         // Always create fresh view to ensure proper sizing
@@ -235,8 +152,6 @@ public class SoftKeyboard extends InputMethodService
     }
 
     private View createNormalKeyboard() {
-        Log.d(TAG, "=== createNormalKeyboard START ===");
-
         View normalLayout = getLayoutInflater().inflate(R.layout.normal_keyboard_layout, null);
 
         // Get screen width for debugging
@@ -244,7 +159,6 @@ public class SoftKeyboard extends InputMethodService
         Display display = wm.getDefaultDisplay();
         android.graphics.Point size = new android.graphics.Point();
         display.getSize(size);
-        Log.d(TAG, "Screen width: " + size.x);
 
         // Force the layout to use full width
         normalLayout.setLayoutParams(new ViewGroup.LayoutParams(
@@ -255,13 +169,6 @@ public class SoftKeyboard extends InputMethodService
         mNormalModeBar = normalLayout.findViewById(R.id.normal_mode_bar);
         mInputView = normalLayout.findViewById(R.id.keyboard);
 
-        // Log the current keyboard view dimensions
-        mInputView.post(() -> {
-            Log.d(TAG, "Keyboard view width after creation: " + mInputView.getWidth());
-            Log.d(TAG, "Keyboard view measured width: " + mInputView.getMeasuredWidth());
-            Log.d(TAG, "Parent layout width: " + normalLayout.getWidth());
-        });
-
         mInputView.setOnKeyboardActionListener(this);
 
         // Ensure keyboard is set to full width
@@ -270,25 +177,16 @@ public class SoftKeyboard extends InputMethodService
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
 
-        // Log keyboard object info
-        if (mCurKeyboard != null) {
-            Log.d(TAG, "Current keyboard: " + mCurKeyboard.toString());
-            Log.d(TAG, "Current keyboard width: " + mCurKeyboard.getMinWidth());
-        }
-
         View floatToggleButton = normalLayout.findViewById(R.id.float_toggle_button);
         floatToggleButton.setOnClickListener(v -> {
-            Log.d(TAG, "Switching to floating mode");
             switchToFloatingMode();
         });
 
-        Log.d(TAG, "=== createNormalKeyboard END ===");
         return normalLayout;
     }
 
     // Update switchToFloatingMode and switchToNormalMode to recreate keyboards:
     private void switchToFloatingMode() {
-        Log.d(TAG, "=== switchToFloatingMode START ===");
         isFloatingMode = true;
 
         // Force recreation of keyboards with proper sizing
@@ -310,12 +208,9 @@ public class SoftKeyboard extends InputMethodService
             requestOverlayPermission();
             isFloatingMode = false;
         }
-
-        Log.d(TAG, "=== switchToFloatingMode END ===");
     }
 
     private void switchToNormalMode() {
-        Log.d(TAG, "=== switchToNormalMode START ===");
         isFloatingMode = false;
         hideFloatingKeyboard();
 
@@ -330,23 +225,17 @@ public class SoftKeyboard extends InputMethodService
             onStartInput(currentEditorInfo, true);
             onStartInputView(currentEditorInfo, true);
         }
-
-        Log.d(TAG, "=== switchToNormalMode END ===");
     }
     // Update showFloatingKeyboard to remove the fresh keyboard creation:
     private void showFloatingKeyboard() {
-        Log.d(TAG, "=== showFloatingKeyboard START ===");
 
         if (overlayView == null) {
-            Log.d(TAG, "Creating floating keyboard overlay");
             createFloatingKeyboard();
         }
 
         // The keyboards should already be properly sized from onInitializeInterface
         // Just ensure the current keyboard is set properly
         if (mOverlayKeyboardView != null && mCurKeyboard != null) {
-            Log.d(TAG, "Setting current keyboard on overlay view");
-            Log.d(TAG, "Current keyboard min width: " + mCurKeyboard.getMinWidth());
             mOverlayKeyboardView.setKeyboard(mCurKeyboard);
             mOverlayKeyboardView.invalidateAllKeys();
             mOverlayKeyboardView.requestLayout();
@@ -359,7 +248,6 @@ public class SoftKeyboard extends InputMethodService
 
             // Set overlay width to match the floating keyboard width
             int keyboardWidth = mCurKeyboard != null ? mCurKeyboard.getMinWidth() : (int)(size.x * 0.8);
-            Log.d(TAG, "Setting overlay width to match keyboard: " + keyboardWidth);
 
             overlayParams.width = keyboardWidth;
             overlayParams.height = WindowManager.LayoutParams.WRAP_CONTENT;
@@ -380,13 +268,10 @@ public class SoftKeyboard extends InputMethodService
                     overlayView.requestLayout();
                 });
 
-                Log.d(TAG, "Floating keyboard shown successfully");
             } catch (Exception e) {
                 Log.e(TAG, "Failed to show floating keyboard", e);
             }
         }
-
-        Log.d(TAG, "=== showFloatingKeyboard END ===");
     }
 
     private void hideFloatingKeyboard() {
@@ -401,41 +286,28 @@ public class SoftKeyboard extends InputMethodService
     }
     private boolean createFloatingKeyboard() {
         try {
-            Log.d(TAG, "Creating overlay window manager");
             overlayWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
 
             if (overlayWindowManager == null) {
-                Log.e(TAG, "Failed to get WindowManager");
                 return false;
             }
-
-            Log.d(TAG, "Creating overlay view");
             createOverlayView();
-
-            Log.d(TAG, "Setting up overlay layout params");
             setupOverlayParams();
-
-            Log.d(TAG, "Setting up overlay drag functionality");
             setupOverlayDrag();
 
             return true;
         } catch (Exception e) {
-            Log.e(TAG, "Error creating floating keyboard", e);
             return false;
         }
     }
 
     // Update createOverlayView method to set proper layout params:
     private void createOverlayView() {
-        Log.d(TAG, "=== createOverlayView START ===");
-
         try {
             overlayView = getLayoutInflater().inflate(R.layout.floating_keyboard_overlay, null);
-            Log.d(TAG, "Successfully inflated floating_keyboard_overlay layout");
 
             mOverlayKeyboardView = overlayView.findViewById(R.id.keyboard);
             if (mOverlayKeyboardView != null) {
-                Log.d(TAG, "Found overlay keyboard view");
                 mOverlayKeyboardView.setOnKeyboardActionListener(this);
 
                 // Set layout params to match parent width (will be constrained by overlay width)
@@ -444,11 +316,8 @@ public class SoftKeyboard extends InputMethodService
                         LinearLayout.LayoutParams.WRAP_CONTENT
                 );
                 mOverlayKeyboardView.setLayoutParams(params);
-                Log.d(TAG, "Set overlay keyboard view to MATCH_PARENT width");
 
                 if (mCurKeyboard != null) {
-                    Log.d(TAG, "Setting current keyboard: " + mCurKeyboard.toString());
-                    Log.d(TAG, "Current keyboard min width: " + mCurKeyboard.getMinWidth());
                     mOverlayKeyboardView.setKeyboard(mCurKeyboard);
                     mOverlayKeyboardView.invalidateAllKeys();
                     mOverlayKeyboardView.requestLayout();
@@ -460,9 +329,7 @@ public class SoftKeyboard extends InputMethodService
             // Add normal mode toggle button functionality
             View normalToggleButton = overlayView.findViewById(R.id.normal_toggle_button);
             if (normalToggleButton != null) {
-                Log.d(TAG, "Found normal toggle button");
                 normalToggleButton.setOnClickListener(v -> {
-                    Log.d(TAG, "Switching to normal mode");
                     switchToNormalMode();
                 });
             }
@@ -470,8 +337,6 @@ public class SoftKeyboard extends InputMethodService
         } catch (Exception e) {
             Log.e(TAG, "Error creating overlay view", e);
         }
-
-        Log.d(TAG, "=== createOverlayView END ===");
     }
 
     private void setupOverlayParams() {
@@ -498,74 +363,108 @@ public class SoftKeyboard extends InputMethodService
     }
 
     private void setupOverlayDrag() {
-        // Make the entire view draggable for now
         View dragTarget = overlayView;
 
-        // If we have the proper layout, try to find the drag handle
+        // Try to find drag handle
         try {
             View dragHandle = overlayView.findViewById(R.id.drag_handle);
             if (dragHandle != null) {
                 dragTarget = dragHandle;
-                Log.d(TAG, "Found drag handle, using it as drag target");
-            } else {
-                Log.d(TAG, "No drag handle found, making entire view draggable");
             }
         } catch (Exception e) {
-            Log.d(TAG, "Exception finding drag handle, using entire view as drag target");
+            Log.d(TAG, "Exception finding drag handle: " + e.getMessage());
         }
 
         dragTarget.setOnTouchListener(new View.OnTouchListener() {
-            private int initialX;
-            private int initialY;
-            private float initialTouchX;
-            private float initialTouchY;
+            private float lastRawX;
+            private float lastRawY;
+            private boolean isDragging = false;
 
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                Log.d(TAG, "Overlay touch: " + event.getAction() + " at screen (" +
-                        event.getRawX() + ", " + event.getRawY() + ")");
-
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
-                        initialX = overlayParams.x;
-                        initialY = overlayParams.y;
-                        initialTouchX = event.getRawX();
-                        initialTouchY = event.getRawY();
-                        Log.d(TAG, "Overlay drag start: window(" + initialX + "," + initialY + ") touch(" + initialTouchX + "," + initialTouchY + ")");
+                        lastRawX = event.getRawX();
+                        lastRawY = event.getRawY();
+                        isDragging = true;
+
                         return true;
 
                     case MotionEvent.ACTION_MOVE:
-                        int newX = initialX + (int) (event.getRawX() - initialTouchX);
-                        int newY = initialY + (int) (event.getRawY() - initialTouchY);
+                        if (!isDragging) {
+                            return false;
+                        }
 
-                        Log.d(TAG, "Overlay drag move: new position (" + newX + "," + newY + ")");
+                        float currentRawX = event.getRawX();
+                        float currentRawY = event.getRawY();
 
-                        // Get screen dimensions for bounds checking
+                        // Calculate movement delta
+                        float deltaX = currentRawX - lastRawX;
+                        float deltaY = currentRawY - lastRawY;
+
+                        // Calculate new overlay position
+                        int currentOverlayX = overlayParams.x;
+                        int currentOverlayY = overlayParams.y;
+
+                        int newOverlayX = currentOverlayX + (int) deltaX;
+                        int newOverlayY = currentOverlayY + (int) deltaY;
+
+                        // Get screen bounds
                         Display display = overlayWindowManager.getDefaultDisplay();
-                        android.graphics.Point size = new android.graphics.Point();
-                        display.getSize(size);
+                        android.graphics.Point screenSize = new android.graphics.Point();
+                        display.getSize(screenSize);
 
-                        // Optional bounds checking - comment out to allow dragging off screen
-                        newX = Math.max(-overlayView.getWidth()/2, Math.min(newX, size.x - overlayView.getWidth()/2));
-                        newY = Math.max(-overlayView.getHeight()/2, Math.min(newY, size.y - overlayView.getHeight()/2));
+                        // Calculate bounds (allowing half the overlay to go off-screen)
+                        int overlayWidth = overlayView.getWidth();
+                        int overlayHeight = overlayView.getHeight();
 
-                        overlayParams.x = newX;
-                        overlayParams.y = newY;
+                        int minX = -overlayWidth / 2;
+                        int maxX = screenSize.x - overlayWidth / 2;
+                        int minY = -overlayHeight / 2;
+                        int maxY = screenSize.y - overlayHeight / 2;
 
+                        // Apply bounds
+                        int boundedX = Math.max(minX, Math.min(newOverlayX, maxX));
+                        int boundedY = Math.max(minY, Math.min(newOverlayY, maxY));
+
+                        boolean xWasBounded = (boundedX != newOverlayX);
+                        boolean yWasBounded = (boundedY != newOverlayY);
+
+                        // Update overlay position
+                        overlayParams.x = boundedX;
+                        overlayParams.y = boundedY;
+
+                        // CRITICAL: Always update lastRawX/Y regardless of bounding
+                        lastRawX = currentRawX;
+                        lastRawY = currentRawY;
+
+                        // Apply the change
                         try {
                             overlayWindowManager.updateViewLayout(overlayView, overlayParams);
-                            Log.d(TAG, "Successfully updated overlay position to (" + newX + "," + newY + ")");
                         } catch (Exception e) {
-                            Log.e(TAG, "Failed to update overlay position", e);
+                            e.printStackTrace();
                         }
 
                         return true;
 
                     case MotionEvent.ACTION_UP:
-                        Log.d(TAG, "Overlay drag end at (" + overlayParams.x + "," + overlayParams.y + ")");
+                    case MotionEvent.ACTION_CANCEL:
+                        isDragging = false;
                         return true;
+
+                    default:
+                        return false;
                 }
-                return false;
+            }
+
+            private String getActionString(int action) {
+                switch (action) {
+                    case MotionEvent.ACTION_DOWN: return "DOWN";
+                    case MotionEvent.ACTION_MOVE: return "MOVE";
+                    case MotionEvent.ACTION_UP: return "UP";
+                    case MotionEvent.ACTION_CANCEL: return "CANCEL";
+                    default: return "UNKNOWN(" + action + ")";
+                }
             }
         });
     }
@@ -575,7 +474,6 @@ public class SoftKeyboard extends InputMethodService
             try {
                 overlayWindowManager.removeView(overlayView);
                 isOverlayVisible = false;
-                Log.d(TAG, "Overlay hidden successfully");
             } catch (Exception e) {
                 Log.e(TAG, "Failed to hide overlay", e);
             }
@@ -585,16 +483,13 @@ public class SoftKeyboard extends InputMethodService
     private boolean canDrawOverlays() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             boolean canDraw = Settings.canDrawOverlays(this);
-            Log.d(TAG, "API >= 23, canDrawOverlays: " + canDraw);
             return canDraw;
         } else {
-            Log.d(TAG, "API < 23, assuming overlay permission granted");
             return true;
         }
     }
 
     private void requestOverlayPermission() {
-        Log.d(TAG, "Requesting overlay permission");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + getPackageName()));
@@ -608,24 +503,11 @@ public class SoftKeyboard extends InputMethodService
     }
 
     private void setLatinKeyboard(LatinKeyboard nextKeyboard) {
-        Log.d(TAG, "=== setLatinKeyboard START ===");
-        Log.d(TAG, "Setting keyboard: " + nextKeyboard.toString());
-        Log.d(TAG, "Keyboard min width: " + nextKeyboard.getMinWidth());
-
         setActiveKeyboard(nextKeyboard);
-
-        Log.d(TAG, "=== setLatinKeyboard END ===");
     }
     @Override
     public void onComputeInsets(InputMethodService.Insets outInsets) {
         super.onComputeInsets(outInsets);
-        Log.d(TAG, "=== onComputeInsets ===");
-        Log.d(TAG, "contentTopInsets: " + outInsets.contentTopInsets);
-        Log.d(TAG, "visibleTopInsets: " + outInsets.visibleTopInsets);
-        if (mInputView != null) {
-            Log.d(TAG, "mInputView height: " + mInputView.getHeight());
-            Log.d(TAG, "mInputView width in onComputeInsets: " + mInputView.getWidth());
-        }
     }
 
     @Override
@@ -634,7 +516,6 @@ public class SoftKeyboard extends InputMethodService
 
         // Reset composing state
         mComposing.setLength(0);
-        updateCandidates();
 
         if (!restarting) {
             mMetaState = 0;
@@ -687,25 +568,16 @@ public class SoftKeyboard extends InputMethodService
     @Override
     public void onStartInputView(EditorInfo attribute, boolean restarting) {
         super.onStartInputView(attribute, restarting);
-
-        Log.d(TAG, "=== onStartInputView START ===");
-        Log.d(TAG, "isFloatingMode: " + isFloatingMode);
-        Log.d(TAG, "restarting: " + restarting);
-
         if (isFloatingMode) {
             if (mInputView != null) {
                 mInputView.setVisibility(View.GONE);
             }
-            Log.d(TAG, "=== onStartInputView END (floating mode) ===");
             return;
         }
 
         // Normal mode - show keyboard
         if (mInputView != null) {
             mInputView.setVisibility(View.VISIBLE);
-            Log.d(TAG, "mInputView visibility set to VISIBLE");
-            Log.d(TAG, "mInputView width: " + mInputView.getWidth());
-            Log.d(TAG, "mInputView parent: " + mInputView.getParent());
         }
 
         // Apply the selected keyboard to the input view
@@ -718,18 +590,7 @@ public class SoftKeyboard extends InputMethodService
 
             // Force layout update
             mInputView.requestLayout();
-
-            // Log final dimensions
-            mInputView.post(() -> {
-                Log.d(TAG, "Final mInputView width in onStartInputView: " + mInputView.getWidth());
-                Keyboard kb = mInputView.getKeyboard();
-                if (kb != null) {
-                    Log.d(TAG, "Keyboard min width: " + kb.getMinWidth());
-                }
-            });
         }
-
-        Log.d(TAG, "=== onStartInputView END ===");
     }
 
     @Override
@@ -752,29 +613,9 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
-    // 4. Add this method to SoftKeyboard.java to log keyboard switches
-    private void logKeyboardSwitch(String fromType, String toType) {
-        Log.d(TAG, "=== KEYBOARD SWITCH: " + fromType + " -> " + toType + " ===");
-        Log.d(TAG, "isFloatingMode: " + isFloatingMode);
-
-        if (mCurKeyboard != null) {
-            Log.d(TAG, "Current keyboard width: " + mCurKeyboard.getMinWidth());
-
-            // Log the keyboard layout before switch
-            if (mCurKeyboard instanceof ResizableLatinKeyboard) {
-                ((ResizableLatinKeyboard) mCurKeyboard).logKeyboardLayout("BEFORE_SWITCH");
-            }
-        }
-
-        // Log which keyboard instances we're using
-        Log.d(TAG, "mQwertyKeyboard: " + (mQwertyKeyboard != null ? mQwertyKeyboard.getClass().getSimpleName() + "@" + Integer.toHexString(mQwertyKeyboard.hashCode()) : "null"));
-        Log.d(TAG, "mSymbolsKeyboard: " + (mSymbolsKeyboard != null ? mSymbolsKeyboard.getClass().getSimpleName() + "@" + Integer.toHexString(mSymbolsKeyboard.hashCode()) : "null"));
-        Log.d(TAG, "mSymbolsShiftedKeyboard: " + (mSymbolsShiftedKeyboard != null ? mSymbolsShiftedKeyboard.getClass().getSimpleName() + "@" + Integer.toHexString(mSymbolsShiftedKeyboard.hashCode()) : "null"));
-    }
 
     public void onKey(int primaryCode, int[] keyCodes) {
         if (primaryCode == Keyboard.KEYCODE_MODE_CHANGE) {
-            // Log before mode change
             LatinKeyboardView activeKeyboardView = isFloatingMode ? mOverlayKeyboardView : mInputView;
             if (activeKeyboardView != null) {
                 Keyboard current = activeKeyboardView.getKeyboard();
@@ -789,19 +630,12 @@ public class SoftKeyboard extends InputMethodService
                     targetType = "SYMBOLS";
                 }
 
-                logKeyboardSwitch(currentType, targetType);
-
                 // Perform the switch
                 if (current == mSymbolsKeyboard || current == mSymbolsShiftedKeyboard) {
                     setActiveKeyboard(mQwertyKeyboard);
                 } else {
                     setActiveKeyboard(mSymbolsKeyboard);
                     mSymbolsKeyboard.setShifted(false);
-                }
-
-                // Log after mode change
-                if (mCurKeyboard instanceof ResizableLatinKeyboard) {
-                    ((ResizableLatinKeyboard) mCurKeyboard).logKeyboardLayout("AFTER_SWITCH");
                 }
             }
             return;
@@ -847,7 +681,6 @@ public class SoftKeyboard extends InputMethodService
         LatinKeyboardView activeKeyboardView = isFloatingMode ? mOverlayKeyboardView : mInputView;
 
         if (activeKeyboardView == null) {
-            Log.w(TAG, "No active keyboard view available for shift handling");
             return;
         }
 
@@ -870,18 +703,8 @@ public class SoftKeyboard extends InputMethodService
     }
     // 6. Update setActiveKeyboard to add more detailed logging
     private void setActiveKeyboard(LatinKeyboard nextKeyboard) {
-        Log.d(TAG, "=== setActiveKeyboard START ===");
-        Log.d(TAG, "Requested keyboard: " + (nextKeyboard != null ? nextKeyboard.getClass().getSimpleName() + "@" + Integer.toHexString(nextKeyboard.hashCode()) : "null"));
-        Log.d(TAG, "Requested keyboard min width: " + (nextKeyboard != null ? nextKeyboard.getMinWidth() : "null"));
-        Log.d(TAG, "Current mode: " + (isFloatingMode ? "floating" : "normal"));
-
         final boolean shouldSupportLanguageSwitchKey =
                 mInputMethodManager.shouldOfferSwitchingToNextInputMethod(getToken());
-
-        // Log current keyboard state before any changes
-        Log.d(TAG, "Before change - mCurKeyboard: " + (mCurKeyboard != null ? mCurKeyboard.getClass().getSimpleName() + "@" + Integer.toHexString(mCurKeyboard.hashCode()) : "null"));
-        Log.d(TAG, "Before change - mQwertyKeyboard: " + (mQwertyKeyboard != null ? mQwertyKeyboard.getClass().getSimpleName() + "@" + Integer.toHexString(mQwertyKeyboard.hashCode()) : "null"));
-        Log.d(TAG, "Before change - mSymbolsKeyboard: " + (mSymbolsKeyboard != null ? mSymbolsKeyboard.getClass().getSimpleName() + "@" + Integer.toHexString(mSymbolsKeyboard.hashCode()) : "null"));
 
         // Determine which keyboard to use based on the type and current mode
         LatinKeyboard keyboardToUse = null;
@@ -892,39 +715,26 @@ public class SoftKeyboard extends InputMethodService
             // QWERTY keyboard requested
             keyboardToUse = isFloatingMode ? mFloatingQwertyKeyboard : mNormalQwertyKeyboard;
             mQwertyKeyboard = keyboardToUse;
-            Log.d(TAG, "Using QWERTY keyboard for mode: " + (isFloatingMode ? "floating" : "normal"));
         } else if (nextKeyboard == mNormalSymbolsKeyboard || nextKeyboard == mFloatingSymbolsKeyboard ||
                 nextKeyboard == mSymbolsKeyboard) {
             // Symbols keyboard requested
             keyboardToUse = isFloatingMode ? mFloatingSymbolsKeyboard : mNormalSymbolsKeyboard;
             mSymbolsKeyboard = keyboardToUse;
-            Log.d(TAG, "Using symbols keyboard for mode: " + (isFloatingMode ? "floating" : "normal"));
         } else if (nextKeyboard == mNormalSymbolsShiftedKeyboard || nextKeyboard == mFloatingSymbolsShiftedKeyboard ||
                 nextKeyboard == mSymbolsShiftedKeyboard) {
             // Symbols shifted keyboard requested
             keyboardToUse = isFloatingMode ? mFloatingSymbolsShiftedKeyboard : mNormalSymbolsShiftedKeyboard;
             mSymbolsShiftedKeyboard = keyboardToUse;
-            Log.d(TAG, "Using symbols shifted keyboard for mode: " + (isFloatingMode ? "floating" : "normal"));
         }
 
         if (keyboardToUse == null) {
-            Log.e(TAG, "Could not determine keyboard to use!");
             return;
-        }
-
-        Log.d(TAG, "Selected keyboard: " + keyboardToUse.getClass().getSimpleName() + "@" + Integer.toHexString(keyboardToUse.hashCode()));
-        Log.d(TAG, "Selected keyboard min width: " + keyboardToUse.getMinWidth());
-
-        // Log keyboard layout before setting
-        if (keyboardToUse instanceof ResizableLatinKeyboard) {
-            ((ResizableLatinKeyboard) keyboardToUse).logKeyboardLayout("BEFORE_SET_ON_VIEW");
         }
 
         keyboardToUse.setLanguageSwitchKeyVisibility(shouldSupportLanguageSwitchKey);
 
         // Apply to the appropriate view
         if (isFloatingMode && mOverlayKeyboardView != null) {
-            Log.d(TAG, "Setting keyboard on overlay view");
             mOverlayKeyboardView.setKeyboard(keyboardToUse);
             mOverlayKeyboardView.invalidateAllKeys();
             mOverlayKeyboardView.requestLayout();
@@ -934,55 +744,19 @@ public class SoftKeyboard extends InputMethodService
                 overlayView.requestLayout();
             }
         } else if (mInputView != null) {
-            Log.d(TAG, "Setting keyboard on input view");
             mInputView.setKeyboard(keyboardToUse);
             mInputView.invalidateAllKeys();
             mInputView.requestLayout();
         }
 
         mCurKeyboard = keyboardToUse;
-
-        // Log final state
-        Log.d(TAG, "After change - mCurKeyboard: " + (mCurKeyboard != null ? mCurKeyboard.getClass().getSimpleName() + "@" + Integer.toHexString(mCurKeyboard.hashCode()) : "null"));
-        Log.d(TAG, "Final keyboard min width: " + mCurKeyboard.getMinWidth());
-
-        // Log keyboard layout after setting
-        if (mCurKeyboard instanceof ResizableLatinKeyboard) {
-            ((ResizableLatinKeyboard) mCurKeyboard).logKeyboardLayout("AFTER_SET_ON_VIEW");
-        }
-
-        Log.d(TAG, "=== setActiveKeyboard END ===");
     }
 
-
-    /**
-     * Called by the framework when your view for showing candidates needs to
-     * be generated, like {@link #onCreateInputView}.
-     */
-    @Override public View onCreateCandidatesView() {
-        mCandidateView = new CandidateView(getDisplayContext());
-        mCandidateView.setService(this);
-        return mCandidateView;
-    }
-
-
-    /**
-     * This is the main point where we do our initialization of the input method
-     * to begin operating on an application.  At this point we have been
-     * bound to the client, and are now receiving all of the detailed information
-     * about the target of our edits.
-     */
-
-    /**
-     * This is called when the user is done editing a field.  We can use
-     * this to reset our state.
-     */
     @Override public void onFinishInput() {
         super.onFinishInput();
 
         // Clear current composing text and candidates.
         mComposing.setLength(0);
-        updateCandidates();
 
         // We only hide the candidates window when finishing input on
         // a particular editor, to avoid popping the underlying application
@@ -1001,9 +775,6 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
-    /**
-     * Deal with the editor reporting movement of its cursor.
-     */
     @Override public void onUpdateSelection(int oldSelStart, int oldSelEnd,
                                             int newSelStart, int newSelEnd,
                                             int candidatesStart, int candidatesEnd) {
@@ -1015,7 +786,6 @@ public class SoftKeyboard extends InputMethodService
         if (mComposing.length() > 0 && (newSelStart != candidatesEnd
                 || newSelEnd != candidatesEnd)) {
             mComposing.setLength(0);
-            updateCandidates();
             InputConnection ic = getCurrentInputConnection();
             if (ic != null) {
                 ic.finishComposingText();
@@ -1023,34 +793,6 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
-    /**
-     * This tells us about completions that the editor has determined based
-     * on the current text in it.  We want to use this in fullscreen mode
-     * to show the completions ourself, since the editor can not be seen
-     * in that situation.
-     */
-    @Override public void onDisplayCompletions(CompletionInfo[] completions) {
-        if (mCompletionOn) {
-            mCompletions = completions;
-            if (completions == null) {
-                setSuggestions(null, false, false);
-                return;
-            }
-
-            List<String> stringList = new ArrayList<String>();
-            for (int i = 0; i < completions.length; i++) {
-                CompletionInfo ci = completions[i];
-                if (ci != null) stringList.add(ci.getText().toString());
-            }
-            setSuggestions(stringList, true, true);
-        }
-    }
-
-    /**
-     * This translates incoming hard key events in to edit operations on an
-     * InputConnection.  It is only needed when using the
-     * PROCESS_HARD_KEYS option.
-     */
     private boolean translateKeyDown(int keyCode, KeyEvent event) {
         mMetaState = MetaKeyKeyListener.handleKeyDown(mMetaState,
                 keyCode, event);
@@ -1083,11 +825,6 @@ public class SoftKeyboard extends InputMethodService
         return true;
     }
 
-    /**
-     * Use this to monitor key events being delivered to the application.
-     * We get first crack at them, and can either resume them or let them
-     * continue to the app.
-     */
     @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
         switch (keyCode) {
             case KeyEvent.KEYCODE_BACK:
@@ -1150,11 +887,6 @@ public class SoftKeyboard extends InputMethodService
         return super.onKeyDown(keyCode, event);
     }
 
-    /**
-     * Use this to monitor key events being delivered to the application.
-     * We get first crack at them, and can either resume them or let them
-     * continue to the app.
-     */
     @Override public boolean onKeyUp(int keyCode, KeyEvent event) {
         // If we want to do transformations on text being entered with a hard
         // keyboard, we need to process the up events to update the meta key
@@ -1169,25 +901,13 @@ public class SoftKeyboard extends InputMethodService
         return super.onKeyUp(keyCode, event);
     }
 
-    /**
-     * Helper function to commit any text being composed in to the editor.
-     */
     private void commitTyped(InputConnection inputConnection) {
         if (mComposing.length() > 0) {
             inputConnection.commitText(mComposing, mComposing.length());
             mComposing.setLength(0);
-            updateCandidates();
         }
     }
 
-    /**
-     * Helper to update the shift state of our keyboard based on the initial
-     * editor state.
-     */
-
-    /**
-     * Helper to determine if a given character code is alphabetic.
-     */
     private boolean isAlphabet(int code) {
         if (Character.isLetter(code)) {
             return true;
@@ -1196,9 +916,6 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
-    /**
-     * Helper to send a key down / key up pair to the current editor.
-     */
     private void keyDownUp(int keyEventCode) {
         getCurrentInputConnection().sendKeyEvent(
                 new KeyEvent(KeyEvent.ACTION_DOWN, keyEventCode));
@@ -1206,9 +923,6 @@ public class SoftKeyboard extends InputMethodService
                 new KeyEvent(KeyEvent.ACTION_UP, keyEventCode));
     }
 
-    /**
-     * Helper to send a character to the editor as raw key events.
-     */
     private void sendKey(int keyCode) {
         switch (keyCode) {
             case '\n':
@@ -1236,45 +950,14 @@ public class SoftKeyboard extends InputMethodService
         updateShiftKeyState(getCurrentInputEditorInfo());
     }
 
-    /**
-     * Update the list of available candidates from the current composing
-     * text.  This will need to be filled in by however you are determining
-     * candidates.
-     */
-    private void updateCandidates() {
-        if (!mCompletionOn) {
-            if (mComposing.length() > 0) {
-                ArrayList<String> list = new ArrayList<String>();
-                list.add(mComposing.toString());
-                setSuggestions(list, true, true);
-            } else {
-                setSuggestions(null, false, false);
-            }
-        }
-    }
-
-    public void setSuggestions(List<String> suggestions, boolean completions,
-                               boolean typedWordValid) {
-        if (suggestions != null && suggestions.size() > 0) {
-            setCandidatesViewShown(true);
-        } else if (isExtractViewShown()) {
-            setCandidatesViewShown(true);
-        }
-        if (mCandidateView != null) {
-            mCandidateView.setSuggestions(suggestions, completions, typedWordValid);
-        }
-    }
-
     private void handleBackspace() {
         final int length = mComposing.length();
         if (length > 1) {
             mComposing.delete(length - 1, length);
             getCurrentInputConnection().setComposingText(mComposing, 1);
-            updateCandidates();
         } else if (length > 0) {
             mComposing.setLength(0);
             getCurrentInputConnection().commitText("", 0);
-            updateCandidates();
         } else {
             keyDownUp(KeyEvent.KEYCODE_DEL);
         }
@@ -1296,7 +979,6 @@ public class SoftKeyboard extends InputMethodService
             mComposing.append((char) primaryCode);
             getCurrentInputConnection().setComposingText(mComposing, 1);
             updateShiftKeyState(getCurrentInputEditorInfo());
-            updateCandidates();
         } else {
             getCurrentInputConnection().commitText(
                     String.valueOf((char) primaryCode), 1);
@@ -1352,35 +1034,13 @@ public class SoftKeyboard extends InputMethodService
         return separators.contains(String.valueOf((char)code));
     }
 
-    public void pickDefaultCandidate() {
-        pickSuggestionManually(0);
-    }
-
-    public void pickSuggestionManually(int index) {
-        if (mCompletionOn && mCompletions != null && index >= 0
-                && index < mCompletions.length) {
-            CompletionInfo ci = mCompletions[index];
-            getCurrentInputConnection().commitCompletion(ci);
-            if (mCandidateView != null) {
-                mCandidateView.clear();
-            }
-            updateShiftKeyState(getCurrentInputEditorInfo());
-        } else if (mComposing.length() > 0) {
-            // If we were generating candidate suggestions for the current
-            // text, we would commit one of them here.  But for this sample,
-            // we will just commit the current text.
-            commitTyped(getCurrentInputConnection());
-        }
-    }
-
-    public void swipeRight() {
-        if (mCompletionOn) {
-            pickDefaultCandidate();
-        }
-    }
-
     public void swipeLeft() {
         handleBackspace();
+    }
+
+    @Override
+    public void swipeRight() {
+
     }
 
     public void swipeDown() {
@@ -1393,12 +1053,13 @@ public class SoftKeyboard extends InputMethodService
     public void onPress(int primaryCode) {
     }
 
+    @Override
     public void onRelease(int primaryCode) {
+
     }
 
     @Override
     public void onDestroy() {
-        Log.d(TAG, "=== SoftKeyboard onDestroy ===");
         hideOverlay();
         super.onDestroy();
     }
