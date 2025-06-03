@@ -3,15 +3,15 @@ package example.android.package2.emoji.extensions
 import android.view.View
 import android.view.inputmethod.InputConnection
 import example.android.package2.keyboard.SoftKeyboard
-import example.android.package2.emoji.manager.EmojiManager
+import example.android.package2.emoji.manager.EnhancedEmojiManager
 
 /**
- * Kotlin extension functions for SoftKeyboard to handle emoji functionality
- * This version assumes SoftKeyboard is in the keyboard package
+ * Kotlin extension functions for SoftKeyboard to handle emoji functionality with sharing
+ * This version integrates WhatsApp sharing capabilities
  */
 
-fun SoftKeyboard.setupEmojiSupport(inputView: View): EmojiManager {
-    return EmojiManager(this) { emojiUnicode ->
+fun SoftKeyboard.setupEmojiSupport(inputView: View): EnhancedEmojiManager {
+    return EnhancedEmojiManager(this) { emojiUnicode ->
         insertEmoji(emojiUnicode)
     }.apply {
         setupEmojiRow(inputView)

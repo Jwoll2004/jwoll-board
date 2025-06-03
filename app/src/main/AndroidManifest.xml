@@ -2,7 +2,11 @@
 
     <!-- Required permissions for overlay windows -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-<!--    <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />-->
+
+    <!-- Required permissions for file sharing -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
     <application
         android:label="@string/app_name"
@@ -23,12 +27,27 @@
                 android:resource="@xml/method" />
         </service>
 
+        <!-- Sharing Service -->
+        <service
+            android:name="example.android.package2.sharing.service.SharingService"
+            android:exported="false" />
+
+        <!-- File Provider for sharing files -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Settings Activity -->
         <activity
             android:name="example.android.package2.keyboard.ImePreferences"
             android:label="@string/settings_name"
             android:exported="true" />
-
 
         <activity android:name=".MainActivity"
             android:exported="true">

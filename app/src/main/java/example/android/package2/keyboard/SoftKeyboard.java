@@ -22,6 +22,10 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.InputMethodSubtype;
+import android.widget.Button;
+import example.android.package2.emoji.manager.EnhancedEmojiManager;
+import example.android.package2.emoji.extensions.SoftKeyboardEmojiExtensionKt;
+import example.android.package2.sharing.extensions.SoftKeyboardSharingExtensionKt;
 
 import androidx.annotation.NonNull;
 
@@ -44,8 +48,8 @@ public class SoftKeyboard extends InputMethodService
     static final boolean PROCESS_HARD_KEYS = true;
 
     // Add these fields to your SoftKeyboard class
-    private EmojiManager normalEmojiManager;
-    private EmojiManager floatingEmojiManager;
+    private EnhancedEmojiManager normalEmojiManager;
+    private EnhancedEmojiManager floatingEmojiManager;
 
     // Original fields
 
@@ -153,10 +157,16 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
-    // Modify your createNormalKeyboard() method
+    // Update the createNormalKeyboard() method in SoftKeyboard.java:
     private View createNormalKeyboard() {
-        // Use the new layout with emoji support
+        // Use the updated layout with sharing support
         View normalLayout = getLayoutInflater().inflate(R.layout.normal_keyboard_layout_with_emoji, null);
+
+        // Get screen width for debugging
+        WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        Display display = wm.getDefaultDisplay();
+        android.graphics.Point size = new android.graphics.Point();
+        display.getSize(size);
 
         // Force the layout to use full width
         normalLayout.setLayoutParams(new ViewGroup.LayoutParams(
@@ -175,8 +185,11 @@ public class SoftKeyboard extends InputMethodService
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
 
-        // Setup emoji functionality using Kotlin extension
+        // Setup emoji functionality using Kotlin extension with enhanced manager
         normalEmojiManager = SoftKeyboardEmojiExtensionKt.setupEmojiSupport(this, normalLayout);
+
+        // Setup sharing functionality
+        setupSharingButtons(normalLayout);
 
         View floatToggleButton = normalLayout.findViewById(R.id.float_toggle_button);
         floatToggleButton.setOnClickListener(v -> {
@@ -184,6 +197,29 @@ public class SoftKeyboard extends InputMethodService
         });
 
         return normalLayout;
+    }
+
+    // Add this new method to SoftKeyboard.java:
+    private void setupSharingButtons(View layout) {
+        Button shareTextButton = layout.findViewById(R.id.share_text_button);
+        Button shareEmojiButton = layout.findViewById(R.id.share_emoji_button);
+
+        if (shareTextButton != null) {
+            shareTextButton.setOnClickListener(v -> {
+                SoftKeyboardSharingExtensionKt.shareCurrentText(this);
+            });
+        }
+
+        if (shareEmojiButton != null) {
+            shareEmojiButton.setOnClickListener(v -> {
+                if (normalEmojiManager != null) {
+                    String lastEmoji = normalEmojiManager.getLastSelectedEmoji();
+                    SoftKeyboardSharingExtensionKt.shareEmoji(this, lastEmoji);
+                } else {
+                    SoftKeyboardSharingExtensionKt.shareLastEmoji(this);
+                }
+            });
+        }
     }
 
     // Update switchToFloatingMode and switchToNormalMode to recreate keyboards:
@@ -302,10 +338,10 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
-    // Modify your createOverlayView() method
+    // Update the createOverlayView() method in SoftKeyboard.java:
     private void createOverlayView() {
         try {
-            // Use the new floating layout with emoji support
+            // Use the updated floating layout with sharing support
             overlayView = getLayoutInflater().inflate(R.layout.floating_keyboard_overlay_with_emoji, null);
 
             mOverlayKeyboardView = overlayView.findViewById(R.id.keyboard);
@@ -330,6 +366,9 @@ public class SoftKeyboard extends InputMethodService
 
             // Setup emoji functionality for floating mode
             floatingEmojiManager = SoftKeyboardEmojiExtensionKt.setupEmojiSupport(this, overlayView);
+
+            // Setup sharing functionality for floating mode
+            setupSharingButtons(overlayView);
 
             // Add normal mode toggle button functionality
             View normalToggleButton = overlayView.findViewById(R.id.normal_toggle_button);

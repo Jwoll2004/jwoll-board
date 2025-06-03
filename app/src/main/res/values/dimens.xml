@@ -32,4 +32,6 @@
     <dimen name="emoji_padding">4dp</dimen>
     <dimen name="emoji_margin">1dp</dimen>
     <dimen name="emoji_container_padding">6dp</dimen>
+    <dimen name="keyboard_padding">4dp</dimen>
+    <dimen name="button_padding">8dp</dimen>
 </resources>
