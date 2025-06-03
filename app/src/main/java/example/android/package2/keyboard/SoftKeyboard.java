@@ -158,12 +158,6 @@ public class SoftKeyboard extends InputMethodService
         // Use the new layout with emoji support
         View normalLayout = getLayoutInflater().inflate(R.layout.normal_keyboard_layout_with_emoji, null);
 
-        // Get screen width for debugging
-        WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-        Display display = wm.getDefaultDisplay();
-        android.graphics.Point size = new android.graphics.Point();
-        display.getSize(size);
-
         // Force the layout to use full width
         normalLayout.setLayoutParams(new ViewGroup.LayoutParams(
                 600,
