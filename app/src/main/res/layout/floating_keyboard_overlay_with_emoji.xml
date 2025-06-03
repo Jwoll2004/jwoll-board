@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/floating_keyboard_bg"
+    android:elevation="8dp">
+
+    <!-- Emoji Row for Floating Mode - sleeker version -->
+    <LinearLayout
+        android:id="@+id/emoji_row_container"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="vertical"
+        android:background="#F5F5F5"
+        android:visibility="visible">
+
+        <!-- Emoji RecyclerView with proper centering -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/emoji_recycler_view"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:background="#FFFFFF"
+            android:elevation="2dp"
+            android:scrollbars="none" />
+
+        <!-- Toggle Button to Show/Hide Emoji Row -->
+        <View
+            android:id="@+id/emoji_toggle_indicator"
+            android:layout_width="30dp"
+            android:layout_height="2dp"
+            android:layout_gravity="center_horizontal"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="1dp" />
+
+    </LinearLayout>
+
+    <!-- Floating Mode Bar with Drag Handle -->
+    <RelativeLayout
+        android:id="@+id/drag_handle"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:background="#AA000000"
+        android:padding="8dp">
+
+        <!-- Emoji Toggle for Floating Mode -->
+        <Button
+            android:id="@+id/emoji_toggle_button"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_alignParentStart="true"
+            android:text="😀"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:background="?android:attr/selectableItemBackground"
+            android:layout_marginEnd="8dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="≡≡≡"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:layout_centerInParent="true" />
+
+        <Button
+            android:id="@+id/normal_toggle_button"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_alignParentEnd="true"
+            android:text="Normal"
+            android:textColor="#FFFFFF"
+            android:background="?android:attr/selectableItemBackground" />
+    </RelativeLayout>
+
+    <!-- Keyboard -->
+    <example.android.package2.keyboard.LatinKeyboardView
+        android:id="@+id/keyboard"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="#EEEEEE" />
+
+</LinearLayout>

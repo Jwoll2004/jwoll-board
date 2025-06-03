@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package example.android.package2;
+package example.android.package2.keyboard;
 
 import android.content.Context;
 import android.content.res.Resources;
@@ -22,7 +22,6 @@ import android.content.res.XmlResourceParser;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.Keyboard;
 import android.view.inputmethod.EditorInfo;
-import android.view.inputmethod.InputMethodManager;
 
 import com.example.aosp_poc.R;
 

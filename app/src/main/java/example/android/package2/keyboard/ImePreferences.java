@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package example.android.package2;
+package example.android.package2.keyboard;
 
 import android.content.Intent;
 import android.os.Bundle;
