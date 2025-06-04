@@ -42,35 +42,34 @@
         android:padding="8dp">
 
         <!-- Emoji Toggle Button -->
-        <Button
-            android:id="@+id/emoji_toggle_button"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:layout_alignParentStart="true"
-            android:text="😀"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:background="?android:attr/selectableItemBackground"
-            android:layout_marginEnd="4dp" />
+<!--        <Button-->
+<!--            android:id="@+id/emoji_toggle_button"-->
+<!--            android:layout_width="wrap_content"-->
+<!--            android:layout_height="match_parent"-->
+<!--            android:layout_alignParentStart="true"-->
+<!--            android:text="⌨️"-->
+<!--            android:textColor="#FFFFFF"-->
+<!--            android:textSize="16sp"-->
+<!--            android:background="?android:attr/selectableItemBackground"-->
+<!--            android:layout_marginEnd="4dp" />-->
 
         <!-- Share Emoji Button -->
-        <Button
-            android:id="@+id/share_emoji_button"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:layout_toEndOf="@id/emoji_toggle_button"
-            android:text="📤"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:background="?android:attr/selectableItemBackground"
-            android:layout_marginEnd="4dp" />
+<!--        <Button-->
+<!--            android:id="@+id/share_emoji_button"-->
+<!--            android:layout_width="wrap_content"-->
+<!--            android:layout_height="match_parent"-->
+<!--            android:layout_toEndOf="@id/emoji_toggle_button"-->
+<!--            android:text="📤"-->
+<!--            android:textColor="#FFFFFF"-->
+<!--            android:textSize="14sp"-->
+<!--            android:background="?android:attr/selectableItemBackground"-->
+<!--            android:layout_marginEnd="4dp" />-->
 
         <!-- Share Text Button -->
         <Button
             android:id="@+id/share_text_button"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:layout_toEndOf="@id/share_emoji_button"
             android:text="💬"
             android:textColor="#FFFFFF"
             android:textSize="14sp"

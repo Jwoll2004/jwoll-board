@@ -49,25 +49,25 @@ class WhatsAppSharingManager(private val context: Context) {
             Toast.makeText(context, "Failed to share text to ${targetApp?.name}", Toast.LENGTH_SHORT).show()
         }
     }
-
-    fun shareEmojiToWhatsApp(emoji: String) {
-        val targetApp = getAvailableMessagingApp()
-        if (targetApp == null) {
-            showMessagingAppNotInstalledMessage()
-            return
-        }
-
-        try {
-            // For simple emoji sharing, we can just share as text
-            shareTextToWhatsApp(emoji)
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to share emoji to ${targetApp?.name}", e)
-            Toast.makeText(context, "Failed to share emoji to ${targetApp?.name}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun shareEmojiAsImageToWhatsApp(emoji: String) {
+//
+//    fun shareEmojiToWhatsApp(emoji: String) {
+//        val targetApp = getAvailableMessagingApp()
+//        if (targetApp == null) {
+//            showMessagingAppNotInstalledMessage()
+//            return
+//        }
+//
+//        try {
+//            // For simple emoji sharing, we can just share as text
+//            shareEmojiAsImageToWhatsApp(emoji)
+//
+//        } catch (e: Exception) {
+//            Log.e(TAG, "Failed to share emoji to ${targetApp?.name}", e)
+//            Toast.makeText(context, "Failed to share emoji to ${targetApp?.name}", Toast.LENGTH_SHORT).show()
+//        }
+//    }
+//
+    fun shareEmojiAsImage(emoji: String) {
         val targetApp = getAvailableMessagingApp()
         if (targetApp == null) {
             showMessagingAppNotInstalledMessage()
@@ -91,11 +91,6 @@ class WhatsAppSharingManager(private val context: Context) {
             Log.e(TAG, "Failed to share emoji as image to ${targetApp?.name}", e)
             Toast.makeText(context, "Failed to share emoji as image", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    fun shareTextAndEmojiToWhatsApp(text: String, emoji: String) {
-        val combinedText = "$emoji $text"
-        shareTextToWhatsApp(combinedText)
     }
 
     private fun createEmojiImage(emoji: String): Bitmap {
@@ -202,10 +197,6 @@ class WhatsAppSharingManager(private val context: Context) {
         } catch (e: PackageManager.NameNotFoundException) {
             false
         }
-    }
-
-    private fun isWhatsAppInstalled(): Boolean {
-        return isAppInstalled(WHATSAPP_PACKAGE) || isAppInstalled(WHATSAPP_BUSINESS_PACKAGE)
     }
 
     private fun showMessagingAppNotInstalledMessage() {

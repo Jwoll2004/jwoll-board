@@ -10,7 +10,8 @@ import example.android.package2.emoji.data.Emoji
 
 class EmojiAdapter(
     private val emojis: List<Emoji>,
-    private val onEmojiClick: (Emoji) -> Unit
+    private val onEmojiClick: (Emoji) -> Unit,
+    private val onEmojiLongClick: (Emoji) -> Unit = {}
 ) : RecyclerView.Adapter<EmojiAdapter.EmojiViewHolder>() {
 
     class EmojiViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -27,9 +28,14 @@ class EmojiAdapter(
         val emoji = emojis[position]
         holder.emojiText.text = emoji.unicode
 
-        // Simplified click handling - use the container, not the TextView
+        // Handle regular click (insert emoji)
         holder.itemView.setOnClickListener {
             onEmojiClick(emoji)
+        }
+
+        holder.itemView.setOnLongClickListener {
+            onEmojiLongClick(emoji)  // Callback to manager
+            true
         }
 
         // Remove conflicting touch handling from TextView

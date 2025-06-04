@@ -6,7 +6,7 @@
     android:background="@drawable/floating_keyboard_bg"
     android:elevation="8dp">
 
-    <!-- Emoji Row for Floating Mode - sleeker version -->
+    <!-- Emoji Row for Floating Mode-->
     <LinearLayout
         android:id="@+id/emoji_row_container"
         android:layout_width="match_parent"
@@ -44,35 +44,34 @@
         android:padding="8dp">
 
         <!-- Emoji Toggle for Floating Mode -->
-        <Button
-            android:id="@+id/emoji_toggle_button"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:layout_alignParentStart="true"
-            android:text="😀"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:background="?android:attr/selectableItemBackground"
-            android:layout_marginEnd="4dp" />
+<!--        <Button-->
+<!--            android:id="@+id/emoji_toggle_button"-->
+<!--            android:layout_width="wrap_content"-->
+<!--            android:layout_height="match_parent"-->
+<!--            android:layout_alignParentStart="true"-->
+<!--            android:text="⌨️"-->
+<!--            android:textColor="#FFFFFF"-->
+<!--            android:textSize="14sp"-->
+<!--            android:background="?android:attr/selectableItemBackground"-->
+<!--            android:layout_marginEnd="4dp" />-->
 
         <!-- Share Emoji Button -->
-        <Button
-            android:id="@+id/share_emoji_button"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:layout_toEndOf="@id/emoji_toggle_button"
-            android:text="📤"
-            android:textColor="#FFFFFF"
-            android:textSize="12sp"
-            android:background="?android:attr/selectableItemBackground"
-            android:layout_marginEnd="4dp" />
+<!--        <Button-->
+<!--            android:id="@+id/share_emoji_button"-->
+<!--            android:layout_width="wrap_content"-->
+<!--            android:layout_height="match_parent"-->
+<!--            android:layout_toEndOf="@id/emoji_toggle_button"-->
+<!--            android:text="📤"-->
+<!--            android:textColor="#FFFFFF"-->
+<!--            android:textSize="12sp"-->
+<!--            android:background="?android:attr/selectableItemBackground"-->
+<!--            android:layout_marginEnd="4dp" />-->
 
         <!-- Share Text Button -->
         <Button
             android:id="@+id/share_text_button"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:layout_toEndOf="@id/share_emoji_button"
             android:text="💬"
             android:textColor="#FFFFFF"
             android:textSize="12sp"

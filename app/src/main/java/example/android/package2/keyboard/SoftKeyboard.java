@@ -23,7 +23,7 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.InputMethodSubtype;
 import android.widget.Button;
-import example.android.package2.emoji.manager.EnhancedEmojiManager;
+import example.android.package2.emoji.manager.EmojiManager;
 import example.android.package2.emoji.extensions.SoftKeyboardEmojiExtensionKt;
 import example.android.package2.sharing.extensions.SoftKeyboardSharingExtensionKt;
 
@@ -39,8 +39,6 @@ import android.graphics.PixelFormat;
 import android.view.Gravity;
 import android.content.Intent;
 import android.widget.LinearLayout;
-import example.android.package2.emoji.manager.EmojiManager;
-import example.android.package2.emoji.extensions.SoftKeyboardEmojiExtensionKt;
 
 public class SoftKeyboard extends InputMethodService
         implements KeyboardView.OnKeyboardActionListener {
@@ -48,10 +46,8 @@ public class SoftKeyboard extends InputMethodService
     static final boolean PROCESS_HARD_KEYS = true;
 
     // Add these fields to your SoftKeyboard class
-    private EnhancedEmojiManager normalEmojiManager;
-    private EnhancedEmojiManager floatingEmojiManager;
-
-    // Original fields
+    private EmojiManager normalEmojiManager;
+    private EmojiManager floatingEmojiManager;
 
     // Add these fields at the top of the class
     private boolean isFloatingMode = false;
@@ -80,7 +76,6 @@ public class SoftKeyboard extends InputMethodService
     private WindowManager.LayoutParams overlayParams;
     private boolean isOverlayVisible = false;
     private LatinKeyboardView mOverlayKeyboardView; // For the overlay keyboard
-
     private LatinKeyboard mNormalQwertyKeyboard;
     private LatinKeyboard mNormalSymbolsKeyboard;
     private LatinKeyboard mNormalSymbolsShiftedKeyboard;
@@ -202,22 +197,10 @@ public class SoftKeyboard extends InputMethodService
     // Add this new method to SoftKeyboard.java:
     private void setupSharingButtons(View layout) {
         Button shareTextButton = layout.findViewById(R.id.share_text_button);
-        Button shareEmojiButton = layout.findViewById(R.id.share_emoji_button);
 
         if (shareTextButton != null) {
             shareTextButton.setOnClickListener(v -> {
                 SoftKeyboardSharingExtensionKt.shareCurrentText(this);
-            });
-        }
-
-        if (shareEmojiButton != null) {
-            shareEmojiButton.setOnClickListener(v -> {
-                if (normalEmojiManager != null) {
-                    String lastEmoji = normalEmojiManager.getLastSelectedEmoji();
-                    SoftKeyboardSharingExtensionKt.shareEmoji(this, lastEmoji);
-                } else {
-                    SoftKeyboardSharingExtensionKt.shareLastEmoji(this);
-                }
             });
         }
     }
