@@ -13,7 +13,7 @@ class SharingService : IntentService("SharingService") {
 
         // Action constants
         const val ACTION_SHARE_TEXT = "example.android.package2.ACTION_SHARE_TEXT"
-        const val ACTION_SHARE_EMOJI_AS_IMAGE = "example.android.package2.ACTION_SHARE_EMOJI_AS_IMAGE"
+        const val ACTION_SHARE_EMOJI = "example.android.package2.ACTION_SHARE_EMOJI"
 
         // Extra keys
         const val EXTRA_TEXT = "extra_text"
@@ -28,9 +28,9 @@ class SharingService : IntentService("SharingService") {
             context.startService(intent)
         }
 
-        fun shareEmojiAsImage(context: Context, emoji: String) {
+        fun shareEmoji(context: Context, emoji: String) {
             val intent = Intent(context, SharingService::class.java).apply {
-                action = ACTION_SHARE_EMOJI_AS_IMAGE
+                action = ACTION_SHARE_EMOJI
                 putExtra(EXTRA_EMOJI, emoji)
             }
             context.startService(intent)
@@ -62,35 +62,14 @@ class SharingService : IntentService("SharingService") {
                     Log.w(TAG, "Text is null or blank")
                 }
             }
-            ACTION_SHARE_EMOJI_AS_IMAGE -> {
+            ACTION_SHARE_EMOJI -> {
                 val emoji = intent.getStringExtra(EXTRA_EMOJI)
                 if (!emoji.isNullOrBlank()) {
-                    whatsAppSharingManager.shareEmojiAsImage(emoji)
+                    whatsAppSharingManager.shareEmoji(emoji)
                 } else {
                     Log.w(TAG, "Emoji is null or blank")
                 }
             }
-
-//            ACTION_SHARE_EMOJI -> {
-//                val emoji = intent.getStringExtra(EXTRA_EMOJI)
-//                if (!emoji.isNullOrBlank()) {
-//                    whatsAppSharingManager.shareEmojiToWhatsApp(emoji)
-//                } else {
-//                    Log.w(TAG, "Emoji is null or blank")
-//                }
-//            }
-//
-//
-//            ACTION_SHARE_TEXT_AND_EMOJI -> {
-//                val text = intent.getStringExtra(EXTRA_TEXT)
-//                val emoji = intent.getStringExtra(EXTRA_EMOJI)
-//                if (!text.isNullOrBlank() && !emoji.isNullOrBlank()) {
-//                    whatsAppSharingManager.shareTextAndEmojiToWhatsApp(text, emoji)
-//                } else {
-//                    Log.w(TAG, "Text or emoji is null or blank")
-//                }
-//            }
-
             else -> {
                 Log.w(TAG, "Unknown action: ${intent.action}")
             }

@@ -928,6 +928,29 @@ public class SoftKeyboard extends InputMethodService
         return super.onKeyUp(keyCode, event);
     }
 
+    public void insertEmojiText(String emojiUnicode) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+
+        // Begin batch edit for better performance
+        ic.beginBatchEdit();
+
+        // Commit any composing text first to preserve it
+        if (mComposing.length() > 0) {
+            ic.commitText(mComposing, 1);
+            mComposing.setLength(0);  // Clear the composing buffer
+        }
+
+        // Insert the emoji
+        ic.commitText(emojiUnicode, 1);
+
+        // End batch edit
+        ic.endBatchEdit();
+
+        // Update shift key state
+        updateShiftKeyState(getCurrentInputEditorInfo());
+    }
+
     private void commitTyped(InputConnection inputConnection) {
         if (mComposing.length() > 0) {
             inputConnection.commitText(mComposing, mComposing.length());

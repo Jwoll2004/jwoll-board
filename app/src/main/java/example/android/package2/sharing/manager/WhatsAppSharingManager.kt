@@ -49,25 +49,8 @@ class WhatsAppSharingManager(private val context: Context) {
             Toast.makeText(context, "Failed to share text to ${targetApp?.name}", Toast.LENGTH_SHORT).show()
         }
     }
-//
-//    fun shareEmojiToWhatsApp(emoji: String) {
-//        val targetApp = getAvailableMessagingApp()
-//        if (targetApp == null) {
-//            showMessagingAppNotInstalledMessage()
-//            return
-//        }
-//
-//        try {
-//            // For simple emoji sharing, we can just share as text
-//            shareEmojiAsImageToWhatsApp(emoji)
-//
-//        } catch (e: Exception) {
-//            Log.e(TAG, "Failed to share emoji to ${targetApp?.name}", e)
-//            Toast.makeText(context, "Failed to share emoji to ${targetApp?.name}", Toast.LENGTH_SHORT).show()
-//        }
-//    }
-//
-    fun shareEmojiAsImage(emoji: String) {
+
+    fun shareEmoji(emoji: String) {
         val targetApp = getAvailableMessagingApp()
         if (targetApp == null) {
             showMessagingAppNotInstalledMessage()
