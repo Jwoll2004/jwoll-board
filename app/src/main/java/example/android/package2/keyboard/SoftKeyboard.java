@@ -646,18 +646,6 @@ public class SoftKeyboard extends InputMethodService
             LatinKeyboardView activeKeyboardView = isFloatingMode ? mOverlayKeyboardView : mInputView;
             if (activeKeyboardView != null) {
                 Keyboard current = activeKeyboardView.getKeyboard();
-                String currentType = "UNKNOWN";
-                String targetType = "UNKNOWN";
-
-                if (current == mSymbolsKeyboard || current == mSymbolsShiftedKeyboard) {
-                    currentType = "SYMBOLS";
-                    targetType = "QWERTY";
-                } else {
-                    currentType = "QWERTY";
-                    targetType = "SYMBOLS";
-                }
-
-                // Perform the switch
                 if (current == mSymbolsKeyboard || current == mSymbolsShiftedKeyboard) {
                     setActiveKeyboard(mQwertyKeyboard);
                 } else {
@@ -667,15 +655,30 @@ public class SoftKeyboard extends InputMethodService
             }
             return;
         }
+
         if (isWordSeparator(primaryCode)) {
-            // Handle separator
+            // Handle separator (including space)
             if (mComposing.length() > 0) {
                 commitTyped(getCurrentInputConnection());
             }
             sendKey(primaryCode);
             updateShiftKeyState(getCurrentInputEditorInfo());
+
+            // Special handling for space - check the word that was just completed
+            if (primaryCode == ' ') {
+                String lastWord = getLastWordFromCommittedText();
+                Log.d("EmojiDebug", "Space pressed, last word: '" + lastWord + "'");
+                notifyEmojiManagersWordCompletion(lastWord);
+            } else {
+                // For other separators, use the general word change notification
+                notifyEmojiManagersWordChange();
+            }
+
         } else if (primaryCode == Keyboard.KEYCODE_DELETE) {
             handleBackspace();
+            // After backspace, check what word we're now in
+            notifyEmojiManagersWordChange();
+
         } else if (primaryCode == Keyboard.KEYCODE_SHIFT) {
             handleShift();
         } else if (primaryCode == Keyboard.KEYCODE_CANCEL) {
@@ -686,20 +689,10 @@ public class SoftKeyboard extends InputMethodService
             return;
         } else if (primaryCode == LatinKeyboardView.KEYCODE_OPTIONS) {
             // Show a menu or somethin'
-        } else if (primaryCode == Keyboard.KEYCODE_MODE_CHANGE) {
-            // Handle mode change (alphabetic <-> symbols)
-            LatinKeyboardView activeKeyboardView = isFloatingMode ? mOverlayKeyboardView : mInputView;
-            if (activeKeyboardView != null) {
-                Keyboard current = activeKeyboardView.getKeyboard();
-                if (current == mSymbolsKeyboard || current == mSymbolsShiftedKeyboard) {
-                    setActiveKeyboard(mQwertyKeyboard);
-                } else {
-                    setActiveKeyboard(mSymbolsKeyboard);
-                    mSymbolsKeyboard.setShifted(false);
-                }
-            }
         } else {
             handleCharacter(primaryCode, keyCodes);
+            // After adding character, check current word
+            notifyEmojiManagersWordChange();
         }
     }
 
@@ -949,12 +942,299 @@ public class SoftKeyboard extends InputMethodService
 
         // Update shift key state
         updateShiftKeyState(getCurrentInputEditorInfo());
+
+        // Reset emoji managers to default after emoji insertion
+        if (normalEmojiManager != null) {
+            normalEmojiManager.resetToDefault();
+        }
+        if (floatingEmojiManager != null) {
+            floatingEmojiManager.resetToDefault();
+        }
+    }
+
+    private String getCurrentWord() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return "";
+
+        // First check if we have composing text
+        if (mComposing.length() > 0) {
+            Log.d("EmojiDebug", "getCurrentWord: Using composing text: '" + mComposing.toString() + "'");
+            return mComposing.toString();
+        }
+
+        // No composing text, extract current word from committed text
+        try {
+            // Get text before and after cursor
+            CharSequence textBefore = ic.getTextBeforeCursor(50, 0);
+            CharSequence textAfter = ic.getTextAfterCursor(10, 0);
+
+            if (textBefore == null) textBefore = "";
+            if (textAfter == null) textAfter = "";
+
+            Log.d("EmojiDebug", "getCurrentWord: textBefore: '" + textBefore + "'");
+            Log.d("EmojiDebug", "getCurrentWord: textAfter: '" + textAfter + "'");
+
+            // Find the current word by looking at character boundaries
+            String beforeStr = textBefore.toString();
+            String afterStr = textAfter.toString();
+
+            // Find start of current word (work backwards from cursor)
+            int wordStart = beforeStr.length();
+            for (int i = beforeStr.length() - 1; i >= 0; i--) {
+                char c = beforeStr.charAt(i);
+                if (Character.isWhitespace(c) || isPunctuation(c)) {
+                    wordStart = i + 1;
+                    break;
+                }
+                if (i == 0) {
+                    wordStart = 0;
+                }
+            }
+
+            // Find end of current word (work forwards from cursor)
+            int wordEnd = 0;
+            for (int i = 0; i < afterStr.length(); i++) {
+                char c = afterStr.charAt(i);
+                if (Character.isWhitespace(c) || isPunctuation(c)) {
+                    wordEnd = i;
+                    break;
+                }
+                if (i == afterStr.length() - 1) {
+                    wordEnd = afterStr.length();
+                }
+            }
+
+            // Extract the current word
+            String wordPart1 = beforeStr.substring(wordStart);
+            String wordPart2 = afterStr.substring(0, wordEnd);
+            String currentWord = (wordPart1 + wordPart2).trim();
+
+            Log.d("EmojiDebug", "getCurrentWord: extracted word: '" + currentWord + "'");
+            Log.d("EmojiDebug", "getCurrentWord: wordStart=" + wordStart + ", wordEnd=" + wordEnd);
+            Log.d("EmojiDebug", "getCurrentWord: wordPart1='" + wordPart1 + "', wordPart2='" + wordPart2 + "'");
+
+            return currentWord;
+
+        } catch (Exception e) {
+            Log.e("EmojiDebug", "Error in getCurrentWord", e);
+            return "";
+        }
+    }
+
+    /**
+     * Helper method to check if a character is punctuation
+     */
+    private boolean isPunctuation(char c) {
+        return ".,!?;:()[]{}\"'".indexOf(c) != -1;
+    }
+    public void replaceCurrentWordWithEmoji(String emojiUnicode) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+
+        Log.d("EmojiDebug", "=== REPLACE CURRENT WORD WITH EMOJI ===");
+        Log.d("EmojiDebug", "Emoji to insert: " + emojiUnicode);
+
+        ic.beginBatchEdit();
+
+        if (mComposing.length() > 0) {
+            // Case 1: We have composing text - use the original method
+            Log.d("EmojiDebug", "Case 1: Replacing composing text");
+            int composingLength = mComposing.length();
+            Log.d("EmojiDebug", "Composing text: '" + mComposing.toString() + "' (length: " + composingLength + ")");
+
+            ic.finishComposingText(); // Commit the composing text
+            ic.deleteSurroundingText(composingLength, 0); // Delete it
+            mComposing.setLength(0); // Clear internal buffer
+
+        } else {
+            // Case 2: No composing text - need to find and replace the current word
+            Log.d("EmojiDebug", "Case 2: No composing text, finding current word in committed text");
+
+            CharSequence textBefore = ic.getTextBeforeCursor(50, 0);
+            CharSequence textAfter = ic.getTextAfterCursor(10, 0);
+
+            if (textBefore == null) textBefore = "";
+            if (textAfter == null) textAfter = "";
+
+            String beforeStr = textBefore.toString();
+            String afterStr = textAfter.toString();
+
+            Log.d("EmojiDebug", "Text before cursor: '" + beforeStr + "'");
+            Log.d("EmojiDebug", "Text after cursor: '" + afterStr + "'");
+
+            // Find the current word boundaries
+            int charsToDeleteBefore = 0;
+            int charsToDeleteAfter = 0;
+
+            // Count characters to delete before cursor (back to start of word)
+            for (int i = beforeStr.length() - 1; i >= 0; i--) {
+                char c = beforeStr.charAt(i);
+                if (Character.isWhitespace(c) || isPunctuation(c)) {
+                    break;
+                }
+                charsToDeleteBefore++;
+            }
+
+            // Count characters to delete after cursor (forward to end of word)
+            for (int i = 0; i < afterStr.length(); i++) {
+                char c = afterStr.charAt(i);
+                if (Character.isWhitespace(c) || isPunctuation(c)) {
+                    break;
+                }
+                charsToDeleteAfter++;
+            }
+
+            Log.d("EmojiDebug", "Characters to delete - before: " + charsToDeleteBefore + ", after: " + charsToDeleteAfter);
+
+            // Delete the current word
+            if (charsToDeleteBefore > 0 || charsToDeleteAfter > 0) {
+                ic.deleteSurroundingText(charsToDeleteBefore, charsToDeleteAfter);
+                Log.d("EmojiDebug", "Deleted current word using deleteSurroundingText(" + charsToDeleteBefore + ", " + charsToDeleteAfter + ")");
+            }
+        }
+
+        // Insert the emoji
+        Log.d("EmojiDebug", "Inserting emoji: " + emojiUnicode);
+        ic.commitText(emojiUnicode, 1);
+
+        ic.endBatchEdit();
+
+        // Debug after operation
+        CharSequence textAfter = ic.getTextBeforeCursor(20, 0);
+        Log.d("EmojiDebug", "Text after operation (20 chars): '" + textAfter + "'");
+        Log.d("EmojiDebug", "=== END REPLACE OPERATION ===");
+
+        // Update shift key state
+        updateShiftKeyState(getCurrentInputEditorInfo());
+
+        // Notify emoji managers to reset to default
+        if (normalEmojiManager != null) {
+            normalEmojiManager.resetToDefault();
+        }
+        if (floatingEmojiManager != null) {
+            floatingEmojiManager.resetToDefault();
+        }
+    }
+    private void notifyEmojiManagersWordChange() {
+        String currentWord = getCurrentWord();
+
+        Log.d("EmojiDebug", "notifyEmojiManagersWordChange: current word: '" + currentWord + "'");
+        Log.d("EmojiDebug", "mComposing length: " + mComposing.length() + ", text: '" + mComposing.toString() + "'");
+
+        if (normalEmojiManager != null) {
+            if (mComposing.length() > 0) {
+                // We have composing text - use composing text change
+                Log.d("EmojiDebug", "Using handleComposingTextChange because mComposing has content");
+                normalEmojiManager.handleComposingTextChange(currentWord);
+            } else {
+                // No composing text - but we need to be smarter about this
+                // Check if we're at the end of a word (cursor immediately after word characters)
+                if (isAtEndOfWord()) {
+                    Log.d("EmojiDebug", "At end of word, treating as composing text change");
+                    normalEmojiManager.handleComposingTextChange(currentWord);
+                } else {
+                    Log.d("EmojiDebug", "Not at end of word, treating as word completion");
+                    normalEmojiManager.handleWordCompletion(currentWord);
+                }
+            }
+        }
+
+        if (floatingEmojiManager != null) {
+            if (mComposing.length() > 0) {
+                floatingEmojiManager.handleComposingTextChange(currentWord);
+            } else {
+                if (isAtEndOfWord()) {
+                    floatingEmojiManager.handleComposingTextChange(currentWord);
+                } else {
+                    floatingEmojiManager.handleWordCompletion(currentWord);
+                }
+            }
+        }
+    }
+
+    private boolean isAtEndOfWord() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return false;
+
+        try {
+            // Get one character after cursor
+            CharSequence charAfterCursor = ic.getTextAfterCursor(1, 0);
+
+            // If there's no character after cursor, we're at end of text (treat as end of word)
+            if (charAfterCursor == null || charAfterCursor.length() == 0) {
+                Log.d("EmojiDebug", "isAtEndOfWord: true (end of text)");
+                return true;
+            }
+
+            char nextChar = charAfterCursor.charAt(0);
+
+            // If next character is whitespace or punctuation, we're at end of word
+            boolean atEndOfWord = Character.isWhitespace(nextChar) || isPunctuation(nextChar);
+
+            Log.d("EmojiDebug", "isAtEndOfWord: " + atEndOfWord + " (next char: '" + nextChar + "')");
+            return atEndOfWord;
+
+        } catch (Exception e) {
+            Log.e("EmojiDebug", "Error in isAtEndOfWord", e);
+            return false;
+        }
+    }
+
+    private String getLastWordFromCommittedText() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return "";
+
+        try {
+            // Get text before cursor (up to 50 characters to find last word)
+            CharSequence textBeforeCursor = ic.getTextBeforeCursor(50, 0);
+            if (textBeforeCursor == null || textBeforeCursor.length() == 0) {
+                return "";
+            }
+
+            String text = textBeforeCursor.toString();
+            // Split by spaces and get the last word
+            String[] words = text.split("\\s+");
+            if (words.length > 0) {
+                String lastWord = words[words.length - 1].trim();
+                // Remove punctuation from the end
+                lastWord = lastWord.replaceAll("[^a-zA-Z0-9]$", "");
+                return lastWord;
+            }
+        } catch (Exception e) {
+            Log.e("SoftKeyboard", "Error getting last word", e);
+        }
+
+        return "";
+    }
+
+    private void notifyEmojiManagersWordCompletion(String lastWord) {
+        Log.d("EmojiDebug", "notifyEmojiManagersWordCompletion: last word: '" + lastWord + "'");
+
+        if (normalEmojiManager != null) {
+            normalEmojiManager.handleWordCompletion(lastWord);
+        }
+        if (floatingEmojiManager != null) {
+            floatingEmojiManager.handleWordCompletion(lastWord);
+        }
     }
 
     private void commitTyped(InputConnection inputConnection) {
         if (mComposing.length() > 0) {
+            // DEBUG LOG - Add this
+            Log.d("EmojiDebug", "commitTyped: committing '" + mComposing.toString() + "' (length: " + mComposing.length() + ")");
+
             inputConnection.commitText(mComposing, mComposing.length());
             mComposing.setLength(0);
+
+            Log.d("EmojiDebug", "commitTyped: mComposing cleared");
+
+            // Reset emoji managers to default when text is committed
+            if (normalEmojiManager != null) {
+                normalEmojiManager.resetToDefault();
+            }
+            if (floatingEmojiManager != null) {
+                floatingEmojiManager.resetToDefault();
+            }
         }
     }
 
@@ -1002,36 +1282,51 @@ public class SoftKeyboard extends InputMethodService
 
     private void handleBackspace() {
         final int length = mComposing.length();
+
+        Log.d("EmojiDebug", "handleBackspace: mComposing length before: " + length + ", text: '" + mComposing.toString() + "'");
+
         if (length > 1) {
             mComposing.delete(length - 1, length);
             getCurrentInputConnection().setComposingText(mComposing, 1);
+            Log.d("EmojiDebug", "Backspace: removed 1 char from composing, new: '" + mComposing.toString() + "'");
         } else if (length > 0) {
             mComposing.setLength(0);
             getCurrentInputConnection().commitText("", 0);
+            Log.d("EmojiDebug", "Backspace: cleared composing text");
         } else {
             keyDownUp(KeyEvent.KEYCODE_DEL);
+            Log.d("EmojiDebug", "Backspace: sent delete key event (no composing text)");
         }
         updateShiftKeyState(getCurrentInputEditorInfo());
     }
 
     // Replace the handleCharacter method with this null-safe version:
     private void handleCharacter(int primaryCode, int[] keyCodes) {
-        // Determine which keyboard view to check for shift state
         LatinKeyboardView activeKeyboardView = isFloatingMode ? mOverlayKeyboardView : mInputView;
 
+        if (activeKeyboardView == null) {
+            return;
+        }
+
         if (isInputViewShown() || isFloatingMode) {
-            if (activeKeyboardView != null && activeKeyboardView.isShifted()) {
+            if (activeKeyboardView.isShifted()) {
                 primaryCode = Character.toUpperCase(primaryCode);
             }
         }
 
+        Log.d("EmojiDebug", "handleCharacter: '" + (char)primaryCode + "', isAlphabet: " + isAlphabet(primaryCode) + ", mPredictionOn: " + mPredictionOn);
+
         if (isAlphabet(primaryCode) && mPredictionOn) {
             mComposing.append((char) primaryCode);
+
+            Log.d("EmojiDebug", "Added to composing. New length: " + mComposing.length() + ", text: '" + mComposing.toString() + "'");
+
             getCurrentInputConnection().setComposingText(mComposing, 1);
             updateShiftKeyState(getCurrentInputEditorInfo());
+
         } else {
-            getCurrentInputConnection().commitText(
-                    String.valueOf((char) primaryCode), 1);
+            Log.d("EmojiDebug", "Not adding to composing, committing character: '" + (char)primaryCode + "'");
+            getCurrentInputConnection().commitText(String.valueOf((char) primaryCode), 1);
         }
     }
 

@@ -1,13 +1,12 @@
 package example.android.package2.emoji.extensions
 
 import android.view.View
-import android.view.inputmethod.InputConnection
 import example.android.package2.keyboard.SoftKeyboard
 import example.android.package2.emoji.manager.EmojiManager
 
 /**
- * Kotlin extension functions for SoftKeyboard to handle emoji functionality with sharing
- * This version integrates WhatsApp sharing capabilities
+ * Kotlin extension functions for SoftKeyboard to handle emoji functionality with dynamic sizing
+ * This version integrates WhatsApp sharing capabilities and dynamic 8-emoji layout
  */
 
 fun SoftKeyboard.insertEmoji(emojiUnicode: String) {
