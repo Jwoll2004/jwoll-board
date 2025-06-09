@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<example.android.package2.keyboard.DraggableKeyboardContainer xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/draggable_container"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical">
 
+    <!-- Add drag handle at the top -->
+    <include
+        android:id="@+id/drag_handle"
+        layout="@layout/drag_handle" />
+
+    <!-- Rest of existing content -->
     <!-- Emoji Row with proper vertical centering -->
     <LinearLayout
         android:id="@+id/emoji_row_container"
@@ -65,4 +72,4 @@
         android:layout_height="wrap_content"
         android:layout_alignParentBottom="true" />
 
-</LinearLayout>
+</example.android.package2.keyboard.DraggableKeyboardContainer>
