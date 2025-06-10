@@ -1,75 +1,100 @@
 <?xml version="1.0" encoding="utf-8"?>
-<example.android.package2.keyboard.DraggableKeyboardContainer xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/draggable_container"
+<!-- Simple LinearLayout parent -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/parent_keyboard_container"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical">
 
-    <!-- Add drag handle at the top -->
-    <include
-        android:id="@+id/drag_handle"
-        layout="@layout/drag_handle" />
-
-    <!-- Rest of existing content -->
-    <!-- Emoji Row with proper vertical centering -->
-    <LinearLayout
-        android:id="@+id/emoji_row_container"
-        android:layout_width="match_parent"
-        android:layout_height="46dp"
-        android:orientation="vertical"
-        android:background="#FF2C2C2C"
-        android:gravity="center_vertical"
-        android:visibility="visible">
-
-        <!-- Emoji RecyclerView with proper centering -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/emoji_recycler_view"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_vertical"
-            android:background="#FF2C2C2C"
-            android:scrollbars="horizontal"
-            android:clipToPadding="false"
-            android:overScrollMode="ifContentScrolls"
-            android:scrollbarStyle="insideOverlay"
-            android:fadeScrollbars="true" />
-
-    </LinearLayout>
-
-    <!-- Normal Mode Bar with Sharing Options -->
+    <!-- Main kFrame - RelativeLayout containing everything -->
     <RelativeLayout
-        android:id="@+id/normal_mode_bar"
-        android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:background="#FF333333"
-        android:padding="8dp">
-
-        <!-- Share Text Button -->
-        <Button
-            android:id="@+id/share_text_button"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:text="💬"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:background="?android:attr/selectableItemBackground"
-            android:layout_marginEnd="8dp" />
-
-        <Button
-            android:id="@+id/float_toggle_button"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:layout_alignParentEnd="true"
-            android:text="Float"
-            android:textColor="#FFFFFF"
-            android:background="?android:attr/selectableItemBackground" />
-    </RelativeLayout>
-
-    <!-- Keyboard - without key preview -->
-    <example.android.package2.keyboard.LatinKeyboardView
-        android:id="@+id/keyboard"
+        android:id="@+id/parent_keyboard"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true" />
+        android:background="@android:color/transparent">
 
-</example.android.package2.keyboard.DraggableKeyboardContainer>
+        <!-- Emoji Row -->
+        <LinearLayout
+            android:id="@+id/emoji_row_container"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:orientation="vertical"
+            android:background="#FF2C2C2C"
+            android:gravity="center_vertical">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/emoji_recycler_view"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:background="#FF2C2C2C"
+                android:scrollbars="horizontal"
+                android:clipToPadding="false" />
+        </LinearLayout>
+
+        <!-- Top Bar with Float Toggle -->
+        <RelativeLayout
+            android:id="@+id/normal_mode_bar"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_below="@id/emoji_row_container"
+            android:background="#FF333333"
+            android:padding="8dp">
+
+            <Button
+                android:id="@+id/share_text_button"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:text="💬"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:background="?android:attr/selectableItemBackground"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/float_toggle_button"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_alignParentEnd="true"
+                android:text="Float"
+                android:textColor="#FFFFFF"
+                android:background="?android:attr/selectableItemBackground" />
+        </RelativeLayout>
+
+        <!-- Main Keyboard View -->
+        <example.android.package2.keyboard.LatinKeyboardView
+            android:id="@+id/keyboard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/normal_mode_bar" />
+
+        <!-- Navigation Bar (Drag Handle) - Bottom of keyboard in float mode -->
+        <LinearLayout
+            android:id="@+id/navBar"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_below="@id/keyboard"
+            android:orientation="horizontal"
+            android:background="#AA000000"
+            android:gravity="center"
+            android:padding="8dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/navBar_indicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="#FFFFFF"
+                android:padding="8dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="≡≡≡"
+                    android:textColor="#000000"
+                    android:textSize="16sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+    </RelativeLayout>
+</LinearLayout>
