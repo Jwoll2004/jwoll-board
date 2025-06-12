@@ -480,41 +480,24 @@ public class SoftKeyboard extends InputMethodService
             targetX = screenWidth * 0.05f; // 10% from left
             targetY = screenHeight * 0.3f; // 30% from top
         } else {
-            // Use saved position with validation
+            // Use saved position
             targetX = savedFloatX;
             targetY = savedFloatY;
-            Log.d("FloatKeyboard", "Attempting to restore saved position: x=" + targetX + ", y=" + targetY);
-
-            // Validate saved position is reasonable (not completely off-screen)
-            // Calculate current scaled dimensions
-            float scaledWidth = kFrame.getWidth() * 0.8f;
-            float scaledHeight = kFrame.getHeight() * 0.8f;
-            float xOffset = (kFrame.getWidth() - scaledWidth) / 2f;
-
-            // Same bounds as drag - ensure 100px visible
-            float visibleBuffer = 100f;
-            float minX = -scaledWidth + visibleBuffer + xOffset;
-            float maxX = screenWidth - visibleBuffer - xOffset;
-            float minY = 0; // Don't go above screen
-            float maxY = screenHeight - scaledHeight; // Don't go below screen
-
-            // Only adjust if saved position is completely unreasonable
-            if (targetX < minX - 200 || targetX > maxX + 200) {
-                Log.d("FloatKeyboard", "Saved X position unreasonable, using fallback");
-                targetX = screenWidth * 0.05f;
-            }
-            if (targetY < minY - 200 || targetY > maxY + 200) {
-                Log.d("FloatKeyboard", "Saved Y position unreasonable, using fallback");
-                targetY = screenHeight * 0.3f;
-            }
         }
 
-        Log.d("FloatKeyboard", String.format("Final positioning: x=%f, y=%f", targetX, targetY));
+        // Ensure position is within bounds
+        float maxX = screenWidth - (kFrame.getWidth() * 0.8f);
+        float maxY = screenHeight - (kFrame.getHeight() * 0.8f);
+
+        targetX = Math.max(0, Math.min(targetX, maxX));
+        targetY = Math.max(0, Math.min(targetY, maxY));
+
+        Log.d("FloatKeyboard", String.format("Positioning keyboard at: x=%f, y=%f", targetX, targetY));
 
         // Move keyboard using BobbleKeyboard method
         kFrame.animate().x(targetX).y(targetY).setDuration(0).start();
 
-        // Update saved position to final position
+        // Save position
         savedFloatX = targetX;
         savedFloatY = targetY;
     }
@@ -692,13 +675,9 @@ public class SoftKeyboard extends InputMethodService
                     Log.d("softkeyboard", "DRAG: ACTION_UP - drag ended");
                     // FIXED: Always restore full opacity on drag end
                     kFrame.setAlpha(1.0f);
-
-                    // Save the ACTUAL position from the view, not calculated position
                     savedFloatX = kFrame.getX();
                     savedFloatY = kFrame.getY();
-
-                    Log.d("softkeyboard", "DRAG: Position saved: x=" + savedFloatX + ", y=" + savedFloatY);
-                    Log.d("softkeyboard", "DRAG: Actual kFrame position: x=" + kFrame.getX() + ", y=" + kFrame.getY());
+                    Log.d("softkeyboard", "DRAG: Opacity restored, position saved: (" + savedFloatX + ", " + savedFloatY + ")");
                     return true;
             }
             return false;
