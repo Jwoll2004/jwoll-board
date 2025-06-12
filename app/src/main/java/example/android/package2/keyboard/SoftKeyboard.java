@@ -1215,11 +1215,33 @@ public class SoftKeyboard extends InputMethodService
 
         Log.d("softkeyboard", "Input connection available, processing key");
 
+        if (isWordSeparator(primaryCode)) {
+            // Handle separator (including space)
+            if (mComposing.length() > 0) {
+                commitTyped(getCurrentInputConnection());
+            }
+            sendKey(primaryCode);
+            updateShiftKeyState(getCurrentInputEditorInfo());
+
+            // Special handling for space - check the word that was just completed
+            if (primaryCode == ' ') {
+                String lastWord = getLastWordFromCommittedText();
+                Log.d("EmojiDebug", "Space pressed, last word: '" + lastWord + "'");
+                notifyEmojiManagersWordCompletion(lastWord);
+            } else {
+                // For other separators, use the general word change notification
+                notifyEmojiManagersWordChange();
+            }
+            return;
+
+        }
+
         // Process the key normally
         switch (primaryCode) {
             case Keyboard.KEYCODE_DELETE:
                 Log.d("softkeyboard", "Processing backspace");
                 ic.deleteSurroundingText(1, 0);
+                notifyEmojiManagersWordChange();
                 break;
 
             case Keyboard.KEYCODE_SHIFT:
@@ -1232,6 +1254,7 @@ public class SoftKeyboard extends InputMethodService
                 handleModeChange();
                 break;
 
+
             case '\n':
                 Log.d("softkeyboard", "Processing enter/return");
                 ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
@@ -1243,10 +1266,188 @@ public class SoftKeyboard extends InputMethodService
                     char code = (char) primaryCode;
                     Log.d("softkeyboard", "Processing character: " + code + " (code: " + primaryCode + ")");
                     ic.commitText(String.valueOf(code), 1);
+                    notifyEmojiManagersWordChange();
                 } else {
                     Log.w("softkeyboard", "Unhandled primaryCode: " + primaryCode);
                 }
                 break;
+        }
+    }
+
+    public boolean isWordSeparator(int code) {
+        String separators = mWordSeparators;
+        return separators.contains(String.valueOf((char)code));
+    }
+    private void sendKey(int keyCode) {
+        switch (keyCode) {
+            case '\n':
+                keyDownUp(KeyEvent.KEYCODE_ENTER);
+                break;
+            default:
+                if (keyCode >= '0' && keyCode <= '9') {
+                    keyDownUp(keyCode - '0' + KeyEvent.KEYCODE_0);
+                } else {
+                    getCurrentInputConnection().commitText(String.valueOf((char) keyCode), 1);
+                }
+                break;
+        }
+    }
+
+    private String getLastWordFromCommittedText() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return "";
+
+        try {
+            // Get text before cursor (up to 50 characters to find last word)
+            CharSequence textBeforeCursor = ic.getTextBeforeCursor(50, 0);
+            if (textBeforeCursor == null || textBeforeCursor.length() == 0) {
+                return "";
+            }
+
+            String text = textBeforeCursor.toString();
+            // Split by spaces and get the last word
+            String[] words = text.split("\\s+");
+            if (words.length > 0) {
+                String lastWord = words[words.length - 1].trim();
+                // Remove punctuation from the end
+                lastWord = lastWord.replaceAll("[^a-zA-Z0-9]$", "");
+                return lastWord;
+            }
+        } catch (Exception e) {
+            Log.e("SoftKeyboard", "Error getting last word", e);
+        }
+
+        return "";
+    }
+
+    private void notifyEmojiManagersWordCompletion(String lastWord) {
+        Log.d("EmojiDebug", "notifyEmojiManagersWordCompletion: last word: '" + lastWord + "'");
+
+        if (normalEmojiManager != null) {
+            normalEmojiManager.handleWordCompletion(lastWord);
+        }
+    }
+    private void notifyEmojiManagersWordChange() {
+        String currentWord = getCurrentWord();
+
+        Log.d("EmojiDebug", "notifyEmojiManagersWordChange: current word: '" + currentWord + "'");
+        Log.d("EmojiDebug", "mComposing length: " + mComposing.length() + ", text: '" + mComposing.toString() + "'");
+
+        if (normalEmojiManager != null) {
+            if (mComposing.length() > 0) {
+                // We have composing text - use composing text change
+                Log.d("EmojiDebug", "Using handleComposingTextChange because mComposing has content");
+                normalEmojiManager.handleComposingTextChange(currentWord);
+            } else {
+                // No composing text - but we need to be smarter about this
+                // Check if we're at the end of a word (cursor immediately after word characters)
+                if (isAtEndOfWord()) {
+                    Log.d("EmojiDebug", "At end of word, treating as composing text change");
+                    normalEmojiManager.handleComposingTextChange(currentWord);
+                } else {
+                    Log.d("EmojiDebug", "Not at end of word, treating as word completion");
+                    normalEmojiManager.handleWordCompletion(currentWord);
+                }
+            }
+        }
+
+
+    }
+
+    private String getCurrentWord() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return "";
+
+        // First check if we have composing text
+        if (mComposing.length() > 0) {
+            Log.d("EmojiDebug", "getCurrentWord: Using composing text: '" + mComposing.toString() + "'");
+            return mComposing.toString();
+        }
+
+        // No composing text, extract current word from committed text
+        try {
+            // Get text before and after cursor
+            CharSequence textBefore = ic.getTextBeforeCursor(50, 0);
+            CharSequence textAfter = ic.getTextAfterCursor(10, 0);
+
+            if (textBefore == null) textBefore = "";
+            if (textAfter == null) textAfter = "";
+
+            Log.d("EmojiDebug", "getCurrentWord: textBefore: '" + textBefore + "'");
+            Log.d("EmojiDebug", "getCurrentWord: textAfter: '" + textAfter + "'");
+
+            // Find the current word by looking at character boundaries
+            String beforeStr = textBefore.toString();
+            String afterStr = textAfter.toString();
+
+            // Find start of current word (work backwards from cursor)
+            int wordStart = beforeStr.length();
+            for (int i = beforeStr.length() - 1; i >= 0; i--) {
+                char c = beforeStr.charAt(i);
+                if (Character.isWhitespace(c) || isPunctuation(c)) {
+                    wordStart = i + 1;
+                    break;
+                }
+                if (i == 0) {
+                    wordStart = 0;
+                }
+            }
+
+            // Find end of current word (work forwards from cursor)
+            int wordEnd = 0;
+            for (int i = 0; i < afterStr.length(); i++) {
+                char c = afterStr.charAt(i);
+                if (Character.isWhitespace(c) || isPunctuation(c)) {
+                    wordEnd = i;
+                    break;
+                }
+                if (i == afterStr.length() - 1) {
+                    wordEnd = afterStr.length();
+                }
+            }
+
+            // Extract the current word
+            String wordPart1 = beforeStr.substring(wordStart);
+            String wordPart2 = afterStr.substring(0, wordEnd);
+            String currentWord = (wordPart1 + wordPart2).trim();
+
+            Log.d("EmojiDebug", "getCurrentWord: extracted word: '" + currentWord + "'");
+            Log.d("EmojiDebug", "getCurrentWord: wordStart=" + wordStart + ", wordEnd=" + wordEnd);
+            Log.d("EmojiDebug", "getCurrentWord: wordPart1='" + wordPart1 + "', wordPart2='" + wordPart2 + "'");
+
+            return currentWord;
+
+        } catch (Exception e) {
+            Log.e("EmojiDebug", "Error in getCurrentWord", e);
+            return "";
+        }
+    }
+
+    private boolean isAtEndOfWord() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return false;
+
+        try {
+            // Get one character after cursor
+            CharSequence charAfterCursor = ic.getTextAfterCursor(1, 0);
+
+            // If there's no character after cursor, we're at end of text (treat as end of word)
+            if (charAfterCursor == null || charAfterCursor.length() == 0) {
+                Log.d("EmojiDebug", "isAtEndOfWord: true (end of text)");
+                return true;
+            }
+
+            char nextChar = charAfterCursor.charAt(0);
+
+            // If next character is whitespace or punctuation, we're at end of word
+            boolean atEndOfWord = Character.isWhitespace(nextChar) || isPunctuation(nextChar);
+
+            Log.d("EmojiDebug", "isAtEndOfWord: " + atEndOfWord + " (next char: '" + nextChar + "')");
+            return atEndOfWord;
+
+        } catch (Exception e) {
+            Log.e("EmojiDebug", "Error in isAtEndOfWord", e);
+            return false;
         }
     }
 
