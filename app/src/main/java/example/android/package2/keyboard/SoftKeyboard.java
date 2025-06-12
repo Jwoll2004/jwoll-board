@@ -480,24 +480,41 @@ public class SoftKeyboard extends InputMethodService
             targetX = screenWidth * 0.05f; // 10% from left
             targetY = screenHeight * 0.3f; // 30% from top
         } else {
-            // Use saved position
+            // Use saved position with validation
             targetX = savedFloatX;
             targetY = savedFloatY;
+            Log.d("FloatKeyboard", "Attempting to restore saved position: x=" + targetX + ", y=" + targetY);
+
+            // Validate saved position is reasonable (not completely off-screen)
+            // Calculate current scaled dimensions
+            float scaledWidth = kFrame.getWidth() * 0.8f;
+            float scaledHeight = kFrame.getHeight() * 0.8f;
+            float xOffset = (kFrame.getWidth() - scaledWidth) / 2f;
+
+            // Same bounds as drag - ensure 100px visible
+            float visibleBuffer = 100f;
+            float minX = -scaledWidth + visibleBuffer + xOffset;
+            float maxX = screenWidth - visibleBuffer - xOffset;
+            float minY = 0; // Don't go above screen
+            float maxY = screenHeight - scaledHeight; // Don't go below screen
+
+            // Only adjust if saved position is completely unreasonable
+            if (targetX < minX - 200 || targetX > maxX + 200) {
+                Log.d("FloatKeyboard", "Saved X position unreasonable, using fallback");
+                targetX = screenWidth * 0.05f;
+            }
+            if (targetY < minY - 200 || targetY > maxY + 200) {
+                Log.d("FloatKeyboard", "Saved Y position unreasonable, using fallback");
+                targetY = screenHeight * 0.3f;
+            }
         }
 
-        // Ensure position is within bounds
-        float maxX = screenWidth - (kFrame.getWidth() * 0.8f);
-        float maxY = screenHeight - (kFrame.getHeight() * 0.8f);
-
-        targetX = Math.max(0, Math.min(targetX, maxX));
-        targetY = Math.max(0, Math.min(targetY, maxY));
-
-        Log.d("FloatKeyboard", String.format("Positioning keyboard at: x=%f, y=%f", targetX, targetY));
+        Log.d("FloatKeyboard", String.format("Final positioning: x=%f, y=%f", targetX, targetY));
 
         // Move keyboard using BobbleKeyboard method
         kFrame.animate().x(targetX).y(targetY).setDuration(0).start();
 
-        // Save position
+        // Update saved position to final position
         savedFloatX = targetX;
         savedFloatY = targetY;
     }
@@ -599,69 +616,75 @@ public class SoftKeyboard extends InputMethodService
                     Log.d("softkeyboard", "DRAG: ACTION_MOVE - dragging");
                     float newX = event.getRawX() + initialTouchX;
                     float newY = event.getRawY() + initialTouchY;
-                    Log.d("softkeyboard", "DRAG: calculated new position: (" + newX + ", " + newY + ")");
 
                     // Get screen bounds
                     DisplayMetrics metrics = getResources().getDisplayMetrics();
                     int screenWidth = metrics.widthPixels;
                     int screenHeight = metrics.heightPixels;
 
-                    // CORRECTED: Calculate actual scaled keyboard dimensions
-                    float scaledWidth = kFrame.getWidth() * kFrame.getScaleX();
-                    float scaledHeight = kFrame.getHeight() * kFrame.getScaleY();
+                    // IMPORTANT: Use kFrame dimensions directly, not scaled dimensions for bounds
+                    float kFrameWidth = kFrame.getWidth();
+                    float kFrameHeight = kFrame.getHeight();
 
-                    // CORRECTED: Account for scale offset (scaling happens from center)
-                    float xOffset = (kFrame.getWidth() - scaledWidth) / 2f;
-                    float yOffset = (kFrame.getHeight() - scaledHeight) / 2f;
+                    // Calculate what the actual visual bounds would be at newX, newY
+                    float scaleX = kFrame.getScaleX(); // 0.8f
+                    float scaleY = kFrame.getScaleY(); // 0.8f
 
-                    // FIXED: Correct bounds calculation
-                    // Left bound: ensure the left edge of the VISUAL keyboard doesn't go past screen left
-                    float minX = -xOffset;
+                    // Visual dimensions after scaling
+                    float visualWidth = kFrameWidth * scaleX;
+                    float visualHeight = kFrameHeight * scaleY;
 
-                    // FIXED: Right bound calculation - ensure kFrame position keeps visual content on screen
-                    float maxX = screenWidth - kFrame.getWidth() + xOffset;
+                    // Offset due to scaling from center
+                    float xOffset = (kFrameWidth - visualWidth) / 2f;
+                    float yOffset = (kFrameHeight - visualHeight) / 2f;
 
-                    // Top bound: ensure the top edge of the VISUAL keyboard doesn't go past screen top
-                    float minY = -yOffset;
+                    // Calculate where the visual edges would be
+                    float visualLeft = newX + xOffset;
+                    float visualRight = newX + xOffset + visualWidth;
+                    float visualTop = newY + yOffset;
+                    float visualBottom = newY + yOffset + visualHeight;
 
-                    // RESTORED: Original docking logic - use screen height without reducing maxY
-                    // Docking will be handled in the docking check below
+                    Log.d("softkeyboard", "VISUAL BOUNDS CHECK:");
+                    Log.d("softkeyboard", "  Proposed kFrame position: (" + newX + ", " + newY + ")");
+                    Log.d("softkeyboard", "  Visual left: " + visualLeft + ", right: " + visualRight);
+                    Log.d("softkeyboard", "  Visual top: " + visualTop + ", bottom: " + visualBottom);
+                    Log.d("softkeyboard", "  Screen: " + screenWidth + "x" + screenHeight);
 
-                    Log.d("softkeyboard", "BOUNDS: Screen: " + screenWidth + "x" + screenHeight);
-                    Log.d("softkeyboard", "BOUNDS: kFrame size: " + kFrame.getWidth() + "x" + kFrame.getHeight());
-                    Log.d("softkeyboard", "BOUNDS: Scaled keyboard: " + scaledWidth + "x" + scaledHeight);
-                    Log.d("softkeyboard", "BOUNDS: Scale offset: (" + xOffset + ", " + yOffset + ")");
-                    Log.d("softkeyboard", "BOUNDS: X limits: " + minX + " to " + maxX);
-                    Log.d("softkeyboard", "BOUNDS: Y limits: " + minY + " to " + screenHeight);
-                    Log.d("softkeyboard", "BOUNDS: Before constraint - newX: " + newX + ", newY: " + newY);
+                    // FIXED: Constrain based on visual bounds, not kFrame bounds
+                    float minVisibleWidth = 100f; // 100px must remain visible
 
-                    // Apply X constraints
-                    newX = Math.max(minX, Math.min(newX, maxX));
+                    // Left constraint: visual left edge can't go past screen left
+                    if (visualLeft < 0) {
+                        newX = newX - visualLeft; // Adjust kFrame position to keep visual on screen
+                        Log.d("softkeyboard", "LEFT BOUND: Adjusted newX to " + newX);
+                    }
 
-                    // Apply Y constraint (only top limit, bottom will trigger docking)
-                    newY = Math.max(minY, newY);
+                    // Right constraint: visual right edge can't go past screen right
+                    if (visualRight > screenWidth) {
+                        float overshoot = visualRight - screenWidth;
+                        newX = newX - overshoot; // Adjust kFrame position
+                        Log.d("softkeyboard", "RIGHT BOUND: Adjusted newX to " + newX);
+                    }
 
-                    Log.d("softkeyboard", "BOUNDS: After constraint - newX: " + newX + ", newY: " + newY);
+                    // Top constraint: visual top can't go above screen
+                    if (visualTop < 0) {
+                        newY = newY - visualTop;
+                        Log.d("softkeyboard", "TOP BOUND: Adjusted newY to " + newY);
+                    }
 
-                    // RESTORED: Original docking logic based on keyboard bottom reaching screen bottom
-                    float keyboardVisualBottom = newY + yOffset + scaledHeight;
+                    Log.d("softkeyboard", "FINAL: newX=" + newX + ", newY=" + newY);
 
-                    Log.d("softkeyboard", "DOCKING: keyboardVisualBottom: " + keyboardVisualBottom);
-                    Log.d("softkeyboard", "DOCKING: screenHeight: " + screenHeight);
-                    Log.d("softkeyboard", "DOCKING: difference: " + (screenHeight - keyboardVisualBottom));
-
-                    // RESTORED: Check for docking when visual keyboard reaches near bottom (100px threshold)
-                    if (keyboardVisualBottom > screenHeight - 0) {
+                    // Check for docking at bottom (use visual bottom)
+                    float finalVisualBottom = newY + yOffset + visualHeight;
+                    if (finalVisualBottom > screenHeight - 50) {
                         Log.d("softkeyboard", "DOCKING: Threshold reached, docking keyboard");
-                        isFloatingMode = false;
-
-                        // FIXED: Restore opacity before docking
                         kFrame.setAlpha(1.0f);
-
+                        isFloatingMode = false;
                         exitFloatingMode();
                         return true;
                     }
 
+                    // Update position using BobbleKeyboard method
                     kFrame.animate().x(newX).y(newY).setDuration(0).start();
                     return true;
 
@@ -669,9 +692,13 @@ public class SoftKeyboard extends InputMethodService
                     Log.d("softkeyboard", "DRAG: ACTION_UP - drag ended");
                     // FIXED: Always restore full opacity on drag end
                     kFrame.setAlpha(1.0f);
+
+                    // Save the ACTUAL position from the view, not calculated position
                     savedFloatX = kFrame.getX();
                     savedFloatY = kFrame.getY();
-                    Log.d("softkeyboard", "DRAG: Opacity restored, position saved: (" + savedFloatX + ", " + savedFloatY + ")");
+
+                    Log.d("softkeyboard", "DRAG: Position saved: x=" + savedFloatX + ", y=" + savedFloatY);
+                    Log.d("softkeyboard", "DRAG: Actual kFrame position: x=" + kFrame.getX() + ", y=" + kFrame.getY());
                     return true;
             }
             return false;
@@ -1188,14 +1215,33 @@ public class SoftKeyboard extends InputMethodService
     }
 
     private void updateShiftKeyState(EditorInfo attr) {
+        Log.d("softkeyboard", "=== updateShiftKeyState called ===");
+        Log.d("softkeyboard", "Before update - shift: " + (mInputView != null && mQwertyKeyboard == mInputView.getKeyboard() ? mQwertyKeyboard.isShifted() : "N/A"));
+        Log.d("softkeyboard", "Before update - caps lock: " + mCapsLock);
+
         if (attr != null && mInputView != null && mQwertyKeyboard == mInputView.getKeyboard()) {
             int caps = 0;
             EditorInfo ei = getCurrentInputEditorInfo();
             if (ei != null && ei.inputType != InputType.TYPE_NULL) {
                 caps = getCurrentInputConnection().getCursorCapsMode(attr.inputType);
             }
-            mInputView.setShifted(mCapsLock || caps != 0);
+
+            Log.d("softkeyboard", "Cursor caps mode: " + caps);
+
+            // IMPORTANT: Don't override manual shift/caps lock state
+            boolean shouldBeShifted = mCapsLock || caps != 0;
+
+            // If we manually set shift (not caps lock), preserve it
+            if (!mCapsLock && mQwertyKeyboard.isShifted()) {
+                shouldBeShifted = true;
+                Log.d("softkeyboard", "Preserving manual shift state");
+            }
+
+            mInputView.setShifted(shouldBeShifted);
+            Log.d("softkeyboard", "After update - shift set to: " + shouldBeShifted);
         }
+
+        Log.d("softkeyboard", "=== updateShiftKeyState completed ===");
     }
 
 
@@ -1203,8 +1249,13 @@ public class SoftKeyboard extends InputMethodService
     public void onKey(int primaryCode, int[] keyCodes) {
         Log.d("softkeyboard", "=== onKey called ===");
         Log.d("softkeyboard", "primaryCode: " + primaryCode);
+        Log.d("softkeyboard", "Keyboard.KEYCODE_SHIFT = " + Keyboard.KEYCODE_SHIFT);
         Log.d("softkeyboard", "isFloatingMode: " + isFloatingMode);
-        Log.d("softkeyboard", "mInputView focus: " + (mInputView != null ? mInputView.hasFocus() : "null"));
+
+        // Check if this is the shift key
+        if (primaryCode == Keyboard.KEYCODE_SHIFT) {
+            Log.d("softkeyboard", "SHIFT KEY MATCHED!");
+        }
 
         // CRITICAL: Ensure input connection is active in floating mode
         InputConnection ic = getCurrentInputConnection();
@@ -1245,9 +1296,9 @@ public class SoftKeyboard extends InputMethodService
                 break;
 
             case Keyboard.KEYCODE_SHIFT:
-                Log.d("softkeyboard", "Processing shift");
+                Log.d("softkeyboard", "SHIFT KEY DETECTED - Processing shift");
                 handleShiftKey();
-                break;
+                return; // Important: return here, don't break
 
             case Keyboard.KEYCODE_MODE_CHANGE:
                 Log.d("softkeyboard", "Processing mode change");
@@ -1264,9 +1315,40 @@ public class SoftKeyboard extends InputMethodService
             default:
                 if (primaryCode > 0) {
                     char code = (char) primaryCode;
+
+                    Log.d("softkeyboard", "=== Character processing start ===");
+                    Log.d("softkeyboard", "mCurKeyboard.isShifted(): " + (mCurKeyboard != null ? mCurKeyboard.isShifted() : "null keyboard"));
+                    Log.d("softkeyboard", "mCapsLock: " + mCapsLock);
+                    Log.d("softkeyboard", "mInputView.isShifted(): " + (mInputView != null ? mInputView.isShifted() : "null inputview"));
+
+                    // IMPORTANT: Check shift/caps state BEFORE any modifications
+                    boolean shouldCapitalize = false;
+                    if (Character.isLetter(code)) {
+                        shouldCapitalize = mCapsLock || (mCurKeyboard != null && mCurKeyboard.isShifted());
+                        Log.d("softkeyboard", "shouldCapitalize: " + shouldCapitalize + " (caps: " + mCapsLock + ", shift: " + (mCurKeyboard != null ? mCurKeyboard.isShifted() : "null") + ")");
+                    }
+
+                    // Apply capitalization
+                    if (shouldCapitalize) {
+                        code = Character.toUpperCase(code);
+                        Log.d("softkeyboard", "Applied caps/shift: " + code);
+                    } else {
+                        code = Character.toLowerCase(code);
+                    }
+
                     Log.d("softkeyboard", "Processing character: " + code + " (code: " + primaryCode + ")");
                     ic.commitText(String.valueOf(code), 1);
+
+                    // IMPORTANT: Reset shift state AFTER character processing (but ONLY if not in caps lock mode)
+                    if (!mCapsLock && mCurKeyboard != null && mCurKeyboard.isShifted()) {
+                        Log.d("softkeyboard", "About to reset shift state");
+                        mCurKeyboard.setShifted(false);
+                        mInputView.invalidateAllKeys();
+                        Log.d("softkeyboard", "Shift reset after character input");
+                    }
+
                     notifyEmojiManagersWordChange();
+                    Log.d("softkeyboard", "=== Character processing end ===");
                 } else {
                     Log.w("softkeyboard", "Unhandled primaryCode: " + primaryCode);
                 }
@@ -1452,15 +1534,50 @@ public class SoftKeyboard extends InputMethodService
     }
 
     private void handleShiftKey() {
-        if (mInputView != null) {
-            if (mCurKeyboard == mQwertyKeyboard) {
-                mCurKeyboard.setShifted(!mCurKeyboard.isShifted());
-                mInputView.invalidateAllKeys();
-                Log.d("softkeyboard", "Shift toggled: " + mCurKeyboard.isShifted());
+        Log.d("softkeyboard", "=== handleShiftKey called ===");
+
+        if (mInputView != null && mCurKeyboard == mQwertyKeyboard) {
+            long now = System.currentTimeMillis();
+
+            Log.d("softkeyboard", "Current shift state: " + mCurKeyboard.isShifted());
+            Log.d("softkeyboard", "Current caps lock: " + mCapsLock);
+            Log.d("softkeyboard", "Time since last shift: " + (now - mLastShiftTime));
+
+            if (mLastShiftTime + 800 > now) {
+                // Double tap within 800ms - toggle caps lock
+                mCapsLock = !mCapsLock;
+                mCurKeyboard.setShifted(mCapsLock);
+                mLastShiftTime = 0;
+                Log.d("softkeyboard", "Double tap - Caps lock toggled: " + mCapsLock);
+            } else {
+                // Single tap
+                if (mCapsLock) {
+                    // If caps lock is on, turn it off
+                    mCapsLock = false;
+                    mCurKeyboard.setShifted(false);
+                    Log.d("softkeyboard", "Single tap - Caps lock turned off");
+                } else {
+                    // Normal single tap - toggle shift
+                    boolean newShiftState = !mCurKeyboard.isShifted();
+                    mCurKeyboard.setShifted(newShiftState);
+                    Log.d("softkeyboard", "Single tap - Shift toggled to: " + newShiftState);
+                }
+                mLastShiftTime = now;
             }
+
+            Log.d("softkeyboard", "Final shift state: " + mCurKeyboard.isShifted());
+            Log.d("softkeyboard", "Final caps lock: " + mCapsLock);
+
+            // Force visual update
+            mInputView.invalidateAllKeys();
+            mInputView.invalidate();
+            updateShiftKeyState(getCurrentInputEditorInfo());
+
+            Log.d("softkeyboard", "=== handleShiftKey completed ===");
+        } else {
+            Log.e("softkeyboard", "handleShiftKey failed - mInputView: " + mInputView + ", mCurKeyboard: " + mCurKeyboard + ", mQwertyKeyboard: " + mQwertyKeyboard);
         }
     }
-
     private void handleModeChange() {
         if (mInputView != null) {
             if (mCurKeyboard == mQwertyKeyboard) {

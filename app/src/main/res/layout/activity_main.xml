@@ -24,7 +24,7 @@
         android:id="@+id/test_edit_text"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:hint="Type here to test your keyboard..."
+        android:hint="Type here to say something..."
         android:minHeight="48dp"
         android:padding="12dp"
         android:background="@android:drawable/edit_text"
