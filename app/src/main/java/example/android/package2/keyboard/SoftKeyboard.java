@@ -191,47 +191,54 @@ public class SoftKeyboard extends InputMethodService
         // CRITICAL: Set floating mode flag FIRST
         isFloatingMode = true;
 
-        Log.d("softkeyboard", "kFrame dimensions: " + kFrame.getWidth() + "x" + kFrame.getHeight());
-        Log.d("softkeyboard", "parentContainer dimensions: " + parentContainer.getWidth() + "x" + parentContainer.getHeight());
+        // STEP 1: Position keyboard IMMEDIATELY before any visual changes
+        // This prevents the spawn-at-top-then-jump behavior
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        int screenWidth = metrics.widthPixels;
+        int screenHeight = metrics.heightPixels;
 
-        // STEP 1: Modify window to give full screen access
+        float targetX, targetY;
+        if (savedFloatX == 0 && savedFloatY == 0) {
+            targetX = screenWidth * 0.05f;
+            targetY = screenHeight * 0.3f;
+        } else {
+            targetX = savedFloatX;
+            targetY = savedFloatY;
+        }
+
+        // Set position IMMEDIATELY without animation
+        kFrame.setX(targetX);
+        kFrame.setY(targetY);
+        Log.d("softkeyboard", "Position set immediately to prevent teleporting: (" + targetX + ", " + targetY + ")");
+
+        // STEP 2: Modify window to give full screen access
         enableFullScreenWindow();
 
-        // STEP 2: Make parent container use full screen
+        // STEP 3: Make parent container use full screen
         makeContainerFullScreen();
 
-        // STEP 3: Show drag handle
+        // STEP 4: Apply scaling AFTER position is set
+        kFrame.setScaleX(0.8f);
+        kFrame.setScaleY(0.8f);
+        Log.d("softkeyboard", "kFrame scaled to 0.8");
+
+        // STEP 5: Show drag handle
         if (kNavBar != null) {
             kNavBar.setVisibility(View.VISIBLE);
             Log.d("softkeyboard", "kNavBar made visible");
         }
 
-        // STEP 4: Scale and position keyboard
-        kFrame.setScaleX(0.8f);
-        kFrame.setScaleY(0.8f);
-        Log.d("softkeyboard", "kFrame scaled to 0.8");
-
-        // STEP 5: Position keyboard after container is resized
+        // STEP 6: Request insets updates
         kFrame.post(() -> {
-            Log.d("softkeyboard", "Positioning keyboard in center - post execution");
-            Log.d("softkeyboard", "kFrame final dimensions: " + kFrame.getWidth() + "x" + kFrame.getHeight());
-            positionKeyboardInCenter();
+            requestInsetUpdate();
 
-            // CRITICAL: Multiple delayed insets updates to ensure proper registration
             kFrame.postDelayed(() -> {
-                Log.d("softkeyboard", "First insets update - 50ms delay");
                 requestInsetUpdate();
             }, 50);
 
             kFrame.postDelayed(() -> {
-                Log.d("softkeyboard", "Second insets update - 100ms delay");
                 requestInsetUpdate();
             }, 100);
-
-            kFrame.postDelayed(() -> {
-                Log.d("softkeyboard", "Final insets update - 200ms delay");
-                requestInsetUpdate();
-            }, 200);
         });
     }
 
