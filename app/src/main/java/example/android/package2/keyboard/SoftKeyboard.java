@@ -2,9 +2,13 @@ package example.android.package2.keyboard;
 
 import android.app.Dialog;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.inputmethodservice.InputMethodService;
 import android.inputmethodservice.Keyboard;
 import android.inputmethodservice.KeyboardView;
+import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.text.InputType;
@@ -36,6 +40,8 @@ import android.util.Log;
 import android.view.Gravity;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
+
+import java.io.File;
 
 public class SoftKeyboard extends InputMethodService
         implements KeyboardView.OnKeyboardActionListener {
@@ -96,6 +102,10 @@ public class SoftKeyboard extends InputMethodService
     private Dialog mDialog;
     private View parentContainer;
 
+    // Chat detection fields
+    private boolean isChatTextBox = false;
+    private View emojiRowContainer;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -146,6 +156,8 @@ public class SoftKeyboard extends InputMethodService
         navBarIndicator = normalLayout.findViewById(R.id.navBar_indicator);
         mInputView = normalLayout.findViewById(R.id.keyboard);
 
+        emojiRowContainer = normalLayout.findViewById(R.id.emoji_row_container);
+
         if (mInputView != null) {
             mInputView.setOnKeyboardActionListener(this);
         }
@@ -156,6 +168,8 @@ public class SoftKeyboard extends InputMethodService
         // Setup emoji support
         normalEmojiManager = SoftKeyboardEmojiExtensionKt.setupEmojiSupport(this, normalLayout);
         setupSharingButtons(normalLayout);
+
+        updateEmojiRowVisibility();
 
         return normalLayout;
     }
@@ -1095,6 +1109,9 @@ public class SoftKeyboard extends InputMethodService
         mCompletionOn = false;
         mCompletions = null;
 
+        isChatTextBox = detectChatTextBox(attribute);
+        updateEmojiRowVisibility();
+
         // Ensure keyboards are initialized
         if (!mKeyboardsInitialized || mQwertyKeyboard == null) {
             onInitializeInterface();
@@ -1143,6 +1160,340 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
+    private boolean detectChatTextBox(EditorInfo editorInfo) {
+        if (editorInfo == null) return false;
+
+        boolean isChatDetected = false;
+
+        int inputType = editorInfo.inputType;
+        int inputClass = inputType & InputType.TYPE_MASK_CLASS;
+        int inputVariation = inputType & InputType.TYPE_MASK_VARIATION;
+        int inputFlags = inputType & InputType.TYPE_MASK_FLAGS;
+
+        Log.d("ChatDetection", "=== ANALYZING INPUT FIELD ===");
+        Log.d("ChatDetection", "Full inputType: 0x" + Integer.toHexString(inputType));
+        Log.d("ChatDetection", "inputClass: 0x" + Integer.toHexString(inputClass) + " (" + getInputClassName(inputClass) + ")");
+        Log.d("ChatDetection", "inputVariation: 0x" + Integer.toHexString(inputVariation) + " (" + getInputVariationName(inputVariation) + ")");
+        Log.d("ChatDetection", "inputFlags: 0x" + Integer.toHexString(inputFlags));
+
+        logInputFlags(inputFlags);
+
+        // Check IME options first - CRITICAL: Exclude search fields
+        int imeOptions = editorInfo.imeOptions;
+        int actionId = imeOptions & EditorInfo.IME_MASK_ACTION;
+
+        Log.d("ChatDetection", "imeOptions: 0x" + Integer.toHexString(imeOptions));
+        Log.d("ChatDetection", "actionId: 0x" + Integer.toHexString(actionId) + " (" + getImeActionName(actionId) + ")");
+
+        // CRITICAL: If it's a search field, it's definitely NOT a chat field
+        if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+            Log.d("ChatDetection", "✗ NOT CHAT - Search field detected");
+            Log.d("ChatDetection", "FINAL RESULT: NON-CHAT FIELD (SEARCH)");
+            Log.d("ChatDetection", "=============================");
+            return false;
+        }
+
+        // Now check for chat characteristics only if it's NOT a search field
+        if (inputClass == InputType.TYPE_CLASS_TEXT) {
+            // Strategy 1: Check for messaging-friendly variations
+            if (inputVariation == InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE ||
+                    inputVariation == InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE) {
+                Log.d("ChatDetection", "✓ CHAT detected via input variation");
+                isChatDetected = true;
+            }
+
+            // Strategy 2: Check for multiline + cap sentences combination (like Telegram chat)
+            if ((inputFlags & InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0 &&
+                    (inputFlags & InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) != 0) {
+                Log.d("ChatDetection", "✓ CHAT detected via multiline + cap sentences");
+                isChatDetected = true;
+            }
+
+            // Strategy 3: Check for auto-correct flags (common in messaging)
+            if ((inputFlags & InputType.TYPE_TEXT_FLAG_AUTO_CORRECT) != 0 &&
+                    (inputFlags & InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) != 0) {
+                Log.d("ChatDetection", "✓ CHAT detected via auto-correct + cap sentences");
+                isChatDetected = true;
+            }
+        }
+
+        // Strategy 4: Check hint text for messaging keywords (restricted list)
+        // But only if hint doesn't contain "search"
+        CharSequence hintText = editorInfo.hintText;
+        Log.d("ChatDetection", "hintText: '" + hintText + "'");
+        if (hintText != null) {
+            String hint = hintText.toString().toLowerCase();
+
+            // Exclude if hint contains "search"
+            if (hint.contains("search")) {
+                Log.d("ChatDetection", "✗ NOT CHAT - Hint contains 'search'");
+            } else if (hint.contains("message") || hint.contains("chat") ||
+                    hint.contains("say") || hint.contains("reply")) {
+                Log.d("ChatDetection", "✓ CHAT detected via hint text: " + hint);
+                isChatDetected = true;
+            }
+        }
+
+        // Strategy 5: Check for IME_ACTION_SEND (definitive chat indicator)
+        if (actionId == EditorInfo.IME_ACTION_SEND) {
+            Log.d("ChatDetection", "✓ CHAT detected via IME_ACTION_SEND");
+            isChatDetected = true;
+        }
+
+        // Log package name for reference
+        String packageName = editorInfo.packageName;
+        Log.d("ChatDetection", "packageName: " + packageName);
+
+        Log.d("ChatDetection", "FINAL RESULT: " + (isChatDetected ? "CHAT FIELD" : "NON-CHAT FIELD"));
+        Log.d("ChatDetection", "=============================");
+
+        return isChatDetected;
+    }
+
+    private void logInputFlags(int inputFlags) {
+        Log.d("ChatDetection", "Input Flags Analysis:");
+
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_CAP_CHARACTERS");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_CAP_WORDS) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_CAP_WORDS");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_CAP_SENTENCES");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_AUTO_CORRECT) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_AUTO_CORRECT");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_AUTO_COMPLETE");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_MULTI_LINE");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_IME_MULTI_LINE) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_IME_MULTI_LINE");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_NO_SUGGESTIONS");
+        }
+    }
+
+    private String getInputClassName(int inputClass) {
+        switch (inputClass) {
+            case InputType.TYPE_CLASS_TEXT: return "TYPE_CLASS_TEXT";
+            case InputType.TYPE_CLASS_NUMBER: return "TYPE_CLASS_NUMBER";
+            case InputType.TYPE_CLASS_PHONE: return "TYPE_CLASS_PHONE";
+            case InputType.TYPE_CLASS_DATETIME: return "TYPE_CLASS_DATETIME";
+            default: return "UNKNOWN";
+        }
+    }
+
+    private String getInputVariationName(int inputVariation) {
+        switch (inputVariation) {
+            case InputType.TYPE_TEXT_VARIATION_NORMAL: return "TYPE_TEXT_VARIATION_NORMAL";
+            case InputType.TYPE_TEXT_VARIATION_URI: return "TYPE_TEXT_VARIATION_URI";
+            case InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS: return "TYPE_TEXT_VARIATION_EMAIL_ADDRESS";
+            case InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT: return "TYPE_TEXT_VARIATION_EMAIL_SUBJECT";
+            case InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE: return "TYPE_TEXT_VARIATION_SHORT_MESSAGE";
+            case InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE: return "TYPE_TEXT_VARIATION_LONG_MESSAGE";
+            case InputType.TYPE_TEXT_VARIATION_PERSON_NAME: return "TYPE_TEXT_VARIATION_PERSON_NAME";
+            case InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS: return "TYPE_TEXT_VARIATION_POSTAL_ADDRESS";
+            case InputType.TYPE_TEXT_VARIATION_PASSWORD: return "TYPE_TEXT_VARIATION_PASSWORD";
+            case InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD: return "TYPE_TEXT_VARIATION_VISIBLE_PASSWORD";
+            case InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT: return "TYPE_TEXT_VARIATION_WEB_EDIT_TEXT";
+            case InputType.TYPE_TEXT_VARIATION_FILTER: return "TYPE_TEXT_VARIATION_FILTER";
+            case InputType.TYPE_TEXT_VARIATION_PHONETIC: return "TYPE_TEXT_VARIATION_PHONETIC";
+            case InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS: return "TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS";
+            case InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD: return "TYPE_TEXT_VARIATION_WEB_PASSWORD";
+            default: return "UNKNOWN";
+        }
+    }
+
+    private String getImeActionName(int actionId) {
+        switch (actionId) {
+            case EditorInfo.IME_ACTION_UNSPECIFIED: return "IME_ACTION_UNSPECIFIED";
+            case EditorInfo.IME_ACTION_NONE: return "IME_ACTION_NONE";
+            case EditorInfo.IME_ACTION_GO: return "IME_ACTION_GO";
+            case EditorInfo.IME_ACTION_SEARCH: return "IME_ACTION_SEARCH";
+            case EditorInfo.IME_ACTION_SEND: return "IME_ACTION_SEND";
+            case EditorInfo.IME_ACTION_NEXT: return "IME_ACTION_NEXT";
+            case EditorInfo.IME_ACTION_DONE: return "IME_ACTION_DONE";
+            case EditorInfo.IME_ACTION_PREVIOUS: return "IME_ACTION_PREVIOUS";
+            default: return "UNKNOWN";
+        }
+    }
+
+    private void updateEmojiRowVisibility() {
+        if (emojiRowContainer != null) {
+            int visibility = isChatTextBox ? View.VISIBLE : View.GONE;
+            emojiRowContainer.setVisibility(visibility);
+
+            Log.d("ChatDetection", "Emoji row visibility: " + (isChatTextBox ? "VISIBLE" : "GONE"));
+        }
+    }
+
+    /**
+     * Check if current input field is a chat text box
+     */
+    public boolean isChatTextBox() {
+        return isChatTextBox;
+    }
+
+    /**
+     * Send emoji directly using commitContent API for chat apps
+     */
+    public boolean sendEmojiDirectly(String emojiUnicode) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null || !isChatTextBox) {
+            Log.d("EmojiSend", "Cannot send directly - no input connection or not in chat");
+            return false;
+        }
+
+        try {
+            // Create emoji image
+            Bitmap emojiImage = createEmojiImage(emojiUnicode);
+            if (emojiImage == null) {
+                Log.e("EmojiSend", "Failed to create emoji image");
+                return false;
+            }
+
+            // Save to temporary file using internal storage to avoid FileProvider issues
+            File imageFile = saveEmojiImageToInternal(emojiImage, "direct_emoji_" + System.currentTimeMillis() + ".png");
+            if (imageFile == null) {
+                Log.e("EmojiSend", "Failed to save emoji image");
+                return false;
+            }
+
+            // Get URI using FileProvider with correct path
+            Uri imageUri = androidx.core.content.FileProvider.getUriForFile(
+                    this,
+                    getPackageName() + ".fileprovider",
+                    imageFile
+            );
+
+            Log.d("EmojiSend", "Created URI: " + imageUri.toString());
+
+            // Create InputContentInfo
+            androidx.core.view.inputmethod.InputContentInfoCompat contentInfo =
+                    new androidx.core.view.inputmethod.InputContentInfoCompat(
+                            imageUri,
+                            new android.content.ClipDescription("Emoji", new String[]{"image/png"}),
+                            null
+                    );
+
+            // Use InputConnectionCompat to commit content
+            int flags = androidx.core.view.inputmethod.InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION;
+
+            boolean success = androidx.core.view.inputmethod.InputConnectionCompat.commitContent(
+                    ic,
+                    getCurrentInputEditorInfo(),
+                    contentInfo,
+                    flags,
+                    null
+            );
+
+            Log.d("EmojiSend", "Direct emoji send result: " + success);
+
+            // Clean up temp file after a delay
+            new android.os.Handler().postDelayed(() -> {
+                try {
+                    if (imageFile.exists()) {
+                        imageFile.delete();
+                        Log.d("EmojiSend", "Cleaned up temp file");
+                    }
+                } catch (Exception e) {
+                    Log.e("EmojiSend", "Error cleaning up temp file", e);
+                }
+            }, 5000); // 5 second delay
+
+            return success;
+
+        } catch (Exception e) {
+            Log.e("EmojiSend", "Error in sendEmojiDirectly", e);
+            return false;
+        }
+    }
+
+    /**
+     * Save emoji image to internal temp directory
+     */
+    private File saveEmojiImageToInternal(Bitmap bitmap, String filename) {
+        try {
+            // Use internal files directory instead of external
+            File directory = new File(getFilesDir(), "temp_emoji");
+            if (!directory.exists()) {
+                directory.mkdirs();
+            }
+
+            File file = new File(directory, filename);
+            java.io.FileOutputStream out = new java.io.FileOutputStream(file);
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
+            out.close();
+
+            Log.d("EmojiSend", "Saved emoji image to: " + file.getAbsolutePath());
+            return file;
+        } catch (Exception e) {
+            Log.e("EmojiSend", "Error saving temp emoji image", e);
+            return null;
+        }
+    }
+
+    /**
+     * Create bitmap image from emoji unicode
+     */
+    private Bitmap createEmojiImage(String emoji) {
+        try {
+            int size = 200;
+            Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+
+            // White background
+            canvas.drawColor(android.graphics.Color.WHITE);
+
+            // Setup paint for emoji
+            Paint paint = new Paint();
+            paint.setAntiAlias(true);
+            paint.setTextSize(120f);
+            paint.setTypeface(android.graphics.Typeface.DEFAULT);
+            paint.setTextAlign(Paint.Align.CENTER);
+
+            // Calculate position to center the emoji
+            float x = size / 2f;
+            float y = size / 2f - (paint.descent() + paint.ascent()) / 2f;
+
+            // Draw emoji
+            canvas.drawText(emoji, x, y, paint);
+
+            return bitmap;
+        } catch (Exception e) {
+            Log.e("EmojiSend", "Error creating emoji image", e);
+            return null;
+        }
+    }
+
+    /**
+     * Save emoji image to temporary file
+     */
+    private File saveEmojiImageToTemp(Bitmap bitmap, String filename) {
+        try {
+            File directory = new File(getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES), "temp_emoji");
+            if (!directory.exists()) {
+                directory.mkdirs();
+            }
+
+            File file = new File(directory, filename);
+            java.io.FileOutputStream out = new java.io.FileOutputStream(file);
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
+            out.close();
+
+            return file;
+        } catch (Exception e) {
+            Log.e("EmojiSend", "Error saving temp emoji image", e);
+            return null;
+        }
+    }
+
     @Override
     public void onStartInputView(EditorInfo attribute, boolean restarting) {
         super.onStartInputView(attribute, restarting);
@@ -1155,6 +1506,8 @@ public class SoftKeyboard extends InputMethodService
             mInputView.setSubtypeOnSpaceKey(subtype);
             mInputView.requestLayout();
         }
+
+        updateEmojiRowVisibility();
     }
 
     @Override

@@ -167,25 +167,36 @@ class EmojiManager(
      */
     private fun handleEmojiSelection(emoji: Emoji) {
         Log.d(TAG, "handleEmojiSelection: ${emoji.unicode}")
-        Log.d(TAG, "State - isShowingSuggestions: $isShowingSuggestions, isShowingSpaceSuggestions: $isShowingSpaceSuggestions")
 
         if (isShowingSuggestions) {
             if (isShowingSpaceSuggestions) {
-                // Space suggestions: just insert emoji (don't replace word)
-                Log.d(TAG, "Space mode: inserting emoji")
                 onEmojiSelected(emoji.unicode)
             } else {
-                // Composing text suggestions: replace the current word with emoji
-                Log.d(TAG, "Composing mode: replacing word with emoji")
                 keyboardService.replaceCurrentWordWithEmoji(emoji.unicode)
             }
-            // Reset to default emojis after selection
             showDefaultEmojis()
         } else {
-            // Default mode: simply insert the emoji
-            Log.d(TAG, "Default mode: inserting emoji")
             onEmojiSelected(emoji.unicode)
         }
+    }
+
+    /**
+     * Handle emoji long press for direct sending in chat apps
+     */
+    private fun handleEmojiLongPress(emoji: Emoji) {
+        Log.d(TAG, "handleEmojiLongPress: ${emoji.unicode}")
+
+        // Only attempt direct send in chat text boxes
+        if (keyboardService.isChatTextBox()) {
+            val success = keyboardService.sendEmojiDirectly(emoji.unicode)
+            if (success) {
+                Log.d(TAG, "Emoji sent directly via commitContent")
+                return
+            }
+        }
+
+        // Fallback to image sharing if direct send fails or not in chat
+        shareEmoji(emoji.unicode)
     }
 
     /**
@@ -217,22 +228,18 @@ class EmojiManager(
      * Update the emoji list in the RecyclerView
      */
     private fun updateEmojiList(emojis: List<Emoji>) {
-        // Don't limit emojis - let all emojis be available for scrolling
-        // The spacing ensures exactly 8 are visible initially
         emojiAdapter = EmojiAdapter(
-            emojis = emojis, // Show all emojis, not just first 8
+            emojis = emojis,
             onEmojiClick = { emoji ->
                 handleEmojiSelection(emoji)
             },
             onEmojiLongClick = { emoji ->
-                shareEmoji(emoji.unicode)
+                handleEmojiLongPress(emoji)  // Use the new handler
             },
             dynamicEmojiSize = emojiSize,
             dynamicSpacing = horizontalSpacing
         )
         emojiRecyclerView?.adapter = emojiAdapter
-
-        // Ensure decoration is applied
         updateRecyclerViewLayout()
     }
 

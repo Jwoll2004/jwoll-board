@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- External files directory for emoji images -->
     <external-files-path name="emoji_images" path="Pictures/emoji_images/" />
-
-    <!-- External cache directory for temporary files -->
-    <external-cache-path name="cache" path="." />
+    <files-path name="temp_emoji" path="temp_emoji/" />
 </paths>
