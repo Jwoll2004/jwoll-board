@@ -549,24 +549,35 @@ public class SoftKeyboard extends InputMethodService
             if (dialog == null || dialog.getWindow() == null) return;
 
             Window window = dialog.getWindow();
-            WindowManager.LayoutParams params = window.getAttributes();
 
-            // Reset to normal IME window
-            params.width = WindowManager.LayoutParams.MATCH_PARENT;
-            params.height = WindowManager.LayoutParams.WRAP_CONTENT;
-            params.gravity = Gravity.BOTTOM;
+            // CRITICAL: Create completely new window params instead of modifying existing ones
+            WindowManager.LayoutParams newParams = new WindowManager.LayoutParams();
 
-            // CRITICAL: Reset all floating-specific flags
-            params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
-            params.flags &= ~WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
-            params.flags &= ~WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
+            // Set normal IME window properties from scratch
+            newParams.width = WindowManager.LayoutParams.MATCH_PARENT;
+            newParams.height = WindowManager.LayoutParams.WRAP_CONTENT;
+            newParams.gravity = Gravity.BOTTOM;
+            newParams.format = android.graphics.PixelFormat.TRANSLUCENT;
+
+            // CRITICAL: Set normal IME flags from scratch (don't modify existing)
+            newParams.flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                    | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    | WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS;
+
+            // Normal IME window type
+            newParams.type = WindowManager.LayoutParams.TYPE_INPUT_METHOD;
+
+            // Reset position
+            newParams.x = 0;
+            newParams.y = 0;
 
             // Reset soft input mode
-            params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
+            newParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
 
-            window.setAttributes(params);
+            // Apply new params
+            window.setAttributes(newParams);
 
-            Log.d("FloatKeyboard", "Window reset to normal IME mode");
+            Log.d("FloatKeyboard", "Window completely reset with new params for normal IME mode");
 
         } catch (Exception e) {
             Log.e("FloatKeyboard", "Error resetting window", e);
