@@ -187,7 +187,7 @@ class EmojiManager(
         Log.d(TAG, "handleEmojiLongPress: ${emoji.unicode}")
 
         // Only attempt direct send in chat text boxes
-        if (keyboardService.isChatTextBox()) {
+        if (keyboardService.isChatTextBox) {
             val success = keyboardService.sendEmojiDirectly(emoji.unicode)
             if (success) {
                 Log.d(TAG, "Emoji sent directly via commitContent")
