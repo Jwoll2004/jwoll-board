@@ -166,7 +166,15 @@ public class SoftKeyboard extends InputMethodService
 
         updateEmojiRowVisibility();
 
+        Log.d("softkeyboard", "onCreateInputView completed:");
+        Log.d("softkeyboard", "  normalLayout: " + (normalLayout != null));
+        Log.d("softkeyboard", "  parentContainer: " + (parentContainer != null));
+        Log.d("softkeyboard", "  kFrame: " + (kFrame != null));
+        Log.d("softkeyboard", "  mInputView: " + (mInputView != null));
+        Log.d("softkeyboard", "  kNavBar: " + (kNavBar != null));
+
         return normalLayout;
+
     }
 
     private void setupFloatToggle(View layout) {
@@ -191,8 +199,11 @@ public class SoftKeyboard extends InputMethodService
         // CRITICAL: Set floating mode flag FIRST
         isFloatingMode = true;
 
-        // STEP 1: Position keyboard IMMEDIATELY before any visual changes
-        // This prevents the spawn-at-top-then-jump behavior
+        // STEP 1: Configure window and container
+        enableFullScreenWindow();
+        makeContainerFullScreen();
+
+        // STEP 2: Position keyboard BEFORE scaling
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         int screenWidth = metrics.widthPixels;
         int screenHeight = metrics.heightPixels;
@@ -206,21 +217,22 @@ public class SoftKeyboard extends InputMethodService
             targetY = savedFloatY;
         }
 
-        // Set position IMMEDIATELY without animation
+        // CRITICAL: Set position immediately without animation to prevent issues
         kFrame.setX(targetX);
         kFrame.setY(targetY);
-        Log.d("softkeyboard", "Position set immediately to prevent teleporting: (" + targetX + ", " + targetY + ")");
 
-        // STEP 2: Modify window to give full screen access
-        enableFullScreenWindow();
-
-        // STEP 3: Make parent container use full screen
-        makeContainerFullScreen();
-
-        // STEP 4: Apply scaling AFTER position is set
+        // STEP 3: Apply scaling
         kFrame.setScaleX(0.8f);
         kFrame.setScaleY(0.8f);
-        Log.d("softkeyboard", "kFrame scaled to 0.8");
+
+        // STEP 4: Ensure keyboard view is visible and properly sized
+        if (mInputView != null) {
+            mInputView.setVisibility(View.VISIBLE);
+            Log.d("softkeyboard", "mInputView visibility set to VISIBLE");
+        }
+
+        // Ensure kFrame itself is visible
+        kFrame.setVisibility(View.VISIBLE);
 
         // STEP 5: Show drag handle
         if (kNavBar != null) {
@@ -228,17 +240,21 @@ public class SoftKeyboard extends InputMethodService
             Log.d("softkeyboard", "kNavBar made visible");
         }
 
-        // STEP 6: Request insets updates
+        // STEP 6: Force layout updates to ensure everything is drawn
         kFrame.post(() -> {
+            kFrame.requestLayout();
+            if (mInputView != null) {
+                mInputView.requestLayout();
+            }
+
+            // Debug: Log final positions and visibility
+            Log.d("softkeyboard", "Final kFrame position: (" + kFrame.getX() + ", " + kFrame.getY() + ")");
+            Log.d("softkeyboard", "Final kFrame size: " + kFrame.getWidth() + "x" + kFrame.getHeight());
+            Log.d("softkeyboard", "Final kFrame visibility: " + kFrame.getVisibility());
+            Log.d("softkeyboard", "Final mInputView visibility: " + (mInputView != null ? mInputView.getVisibility() : "null"));
+
+            // Request insets update
             requestInsetUpdate();
-
-            kFrame.postDelayed(() -> {
-                requestInsetUpdate();
-            }, 50);
-
-            kFrame.postDelayed(() -> {
-                requestInsetUpdate();
-            }, 100);
         });
     }
 
@@ -401,49 +417,29 @@ public class SoftKeyboard extends InputMethodService
             Window window = dialog.getWindow();
             WindowManager.LayoutParams params = window.getAttributes();
 
-            // CRITICAL: Make window cover entire screen
-            params.width = WindowManager.LayoutParams.MATCH_PARENT;
-            params.height = WindowManager.LayoutParams.MATCH_PARENT;
-            params.gravity = Gravity.TOP | Gravity.LEFT;
+            // CRITICAL: DON'T change window size - this causes the gray bar issue
+            // Keep original window dimensions but allow full-screen positioning
 
-            // Set window position to top-left of screen
-            params.x = 0;
-            params.y = 0;
+            // Only change what's necessary for floating
+            params.gravity = Gravity.NO_GRAVITY; // Allow free positioning
 
-            // FIXED: Proper flag configuration for floating mode
-            // CRITICAL: Do NOT use FLAG_NOT_TOUCH_MODAL - this blocks background touches
-            params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
-            params.flags &= ~WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
+            // CRITICAL: Minimal flag changes to avoid breaking system behavior
+            params.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
+            params.flags |= WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
 
-            // Keep window focusable and touchable
-            params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
-            params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-
-            // Add this flag to maintain input connection
-            params.flags |= WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
-
-            // Remove soft input adjustment
-            params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING;
+            // IMPORTANT: Don't change these flags that control focus/touch
+            // params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+            // params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
 
             window.setAttributes(params);
 
-            // Ensure input view maintains focus
-            if (mInputView != null) {
-                mInputView.post(() -> {
-                    mInputView.requestFocus();
-                    Log.d("softkeyboard", "Requested focus for mInputView");
-                });
-            }
-
-            Log.d("softkeyboard", "Window set to full screen with proper touch handling");
+            Log.d("softkeyboard", "Window configured for floating with minimal changes");
 
         } catch (Exception e) {
-            Log.e("softkeyboard", "Error setting full screen window", e);
+            Log.e("softkeyboard", "Error setting floating window", e);
         }
     }
 
-    // FIXED: Make parent container use full screen bounds with proper padding
-    // In makeContainerFullScreen() method, remove or reduce padding:
     private void makeContainerFullScreen() {
         if (parentContainer == null) return;
 
@@ -452,6 +448,7 @@ public class SoftKeyboard extends InputMethodService
             int screenWidth = metrics.widthPixels;
             int screenHeight = metrics.heightPixels;
 
+            // CRITICAL: Set container to full screen so keyboard can be positioned anywhere
             ViewGroup.LayoutParams containerParams = parentContainer.getLayoutParams();
             if (containerParams == null) {
                 containerParams = new ViewGroup.LayoutParams(screenWidth, screenHeight);
@@ -461,15 +458,22 @@ public class SoftKeyboard extends InputMethodService
             }
             parentContainer.setLayoutParams(containerParams);
 
-            // CRITICAL: Remove padding to prevent touch issues
+            // Remove padding to prevent positioning issues
             parentContainer.setPadding(0, 0, 0, 0);
 
+            // CRITICAL: Ensure container doesn't clip the floating keyboard
+            if (parentContainer instanceof ViewGroup) {
+                ((ViewGroup) parentContainer).setClipChildren(false);
+                ((ViewGroup) parentContainer).setClipToPadding(false);
+            }
+
+            // Force layout update
             parentContainer.requestLayout();
 
-            Log.d("FloatKeyboard", "Container set to full screen without padding");
+            Log.d("softkeyboard", "Container set to full screen: " + screenWidth + "x" + screenHeight);
 
         } catch (Exception e) {
-            Log.e("FloatKeyboard", "Error making container full screen", e);
+            Log.e("softkeyboard", "Error making container full screen", e);
         }
     }
 
@@ -515,29 +519,25 @@ public class SoftKeyboard extends InputMethodService
         try {
             Log.d("softkeyboard", "=== Resetting container to normal ===");
 
-            // Reset container layout parameters
+            // Reset container layout parameters to normal IME size
             ViewGroup.LayoutParams containerParams = parentContainer.getLayoutParams();
             if (containerParams != null) {
                 containerParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
                 containerParams.height = ViewGroup.LayoutParams.WRAP_CONTENT;
                 parentContainer.setLayoutParams(containerParams);
-                Log.d("softkeyboard", "Container params reset to MATCH_PARENT/WRAP_CONTENT");
             }
 
-            // Reset container padding
+            // Reset padding and clipping
             parentContainer.setPadding(0, 0, 0, 0);
-            Log.d("softkeyboard", "Container padding reset");
 
-            // Reset container margins if applicable
-            if (containerParams instanceof ViewGroup.MarginLayoutParams) {
-                ViewGroup.MarginLayoutParams marginParams = (ViewGroup.MarginLayoutParams) containerParams;
-                marginParams.setMargins(0, 0, 0, 0);
-                parentContainer.setLayoutParams(marginParams);
-                Log.d("softkeyboard", "Container margins reset");
+            if (parentContainer instanceof ViewGroup) {
+                ((ViewGroup) parentContainer).setClipChildren(true);
+                ((ViewGroup) parentContainer).setClipToPadding(true);
             }
 
-            // Force container layout update
+            // Force layout update
             parentContainer.requestLayout();
+
             Log.d("softkeyboard", "Container reset completed");
 
         } catch (Exception e) {
@@ -551,40 +551,25 @@ public class SoftKeyboard extends InputMethodService
             if (dialog == null || dialog.getWindow() == null) return;
 
             Window window = dialog.getWindow();
+            WindowManager.LayoutParams params = window.getAttributes();
 
-            // CRITICAL: Create completely new window params instead of modifying existing ones
-            WindowManager.LayoutParams newParams = new WindowManager.LayoutParams();
+            // Reset to normal IME window behavior
+            params.gravity = Gravity.BOTTOM;
 
-            // Set normal IME window properties from scratch
-            newParams.width = WindowManager.LayoutParams.MATCH_PARENT;
-            newParams.height = WindowManager.LayoutParams.WRAP_CONTENT;
-            newParams.gravity = Gravity.BOTTOM;
-            newParams.format = android.graphics.PixelFormat.TRANSLUCENT;
+            // Remove floating-specific flags
+            params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
+            params.flags &= ~WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
 
-            // CRITICAL: Set normal IME flags from scratch (don't modify existing)
-            newParams.flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                    | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                    | WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS;
+            window.setAttributes(params);
 
-            // Normal IME window type
-            newParams.type = WindowManager.LayoutParams.TYPE_INPUT_METHOD;
-
-            // Reset position
-            newParams.x = 0;
-            newParams.y = 0;
-
-            // Reset soft input mode
-            newParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
-
-            // Apply new params
-            window.setAttributes(newParams);
-
-            Log.d("FloatKeyboard", "Window completely reset with new params for normal IME mode");
+            Log.d("softkeyboard", "Window reset to normal IME mode");
 
         } catch (Exception e) {
-            Log.e("FloatKeyboard", "Error resetting window", e);
+            Log.e("softkeyboard", "Error resetting window", e);
         }
     }
+
+
 
     private void setupDragHandling() {
         if (kNavBar == null) return;
@@ -692,37 +677,39 @@ public class SoftKeyboard extends InputMethodService
     }
 
     @Override
-    public void onComputeInsets(InputMethodService.Insets outInsets) {
-        Log.d("softkeyboard", "=== onComputeInsets called ===");
-        Log.d("softkeyboard", "isFloatingMode: " + isFloatingMode);
+    public boolean onEvaluateInputViewShown() {
+        if (isFloatingMode) {
+            return true; // Always show input view in floating mode
+        }
+        return super.onEvaluateInputViewShown();
+    }
 
-        // CRITICAL: Always call super first
+    @Override
+    public void onComputeInsets(InputMethodService.Insets outInsets) {
         super.onComputeInsets(outInsets);
 
         if (isFloatingMode && kFrame != null && kFrame.getWidth() > 0 && kFrame.getHeight() > 0) {
             Log.d("softkeyboard", "Setting floating mode insets");
 
-            // CRITICAL: These settings allow background touches
+            // CRITICAL: In floating mode, tell the app there's no keyboard taking up bottom space
+            // But don't hide our keyboard - just report no content displacement
             outInsets.contentTopInsets = 0;
             outInsets.visibleTopInsets = 0;
             outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION;
 
-            // Calculate scaled keyboard bounds
+            // Calculate the actual floating keyboard bounds for touch handling
             float kFrameX = kFrame.getX();
             float kFrameY = kFrame.getY();
-            float kFrameWidth = kFrame.getWidth();
-            float kFrameHeight = kFrame.getHeight();
             float scaleX = kFrame.getScaleX();
             float scaleY = kFrame.getScaleY();
 
-            float scaledWidth = kFrameWidth * scaleX;
-            float scaledHeight = kFrameHeight * scaleY;
+            float scaledWidth = kFrame.getWidth() * scaleX;
+            float scaledHeight = kFrame.getHeight() * scaleY;
 
-            // Account for scaling offset (scaling happens from center)
-            float xOffset = (kFrameWidth - scaledWidth) / 2f;
-            float yOffset = (kFrameHeight - scaledHeight) / 2f;
+            // Account for scaling from center
+            float xOffset = (kFrame.getWidth() - scaledWidth) / 2f;
+            float yOffset = (kFrame.getHeight() - scaledHeight) / 2f;
 
-            // Calculate actual touchable area
             int left = Math.max(0, (int)(kFrameX + xOffset));
             int top = Math.max(0, (int)(kFrameY + yOffset));
             int right = (int)(kFrameX + xOffset + scaledWidth);
@@ -733,34 +720,21 @@ public class SoftKeyboard extends InputMethodService
             right = Math.min(right, metrics.widthPixels);
             bottom = Math.min(bottom, metrics.heightPixels);
 
-            // CRITICAL: Only set keyboard area as touchable, rest is for background app
-            if (right > left && bottom > top) {
-                outInsets.touchableRegion.set(left, top, right, bottom);
-                Log.d("softkeyboard", "Touchable region set to keyboard only: (" + left + ", " + top + ", " + right + ", " + bottom + ")");
-            } else {
-                // Fallback - this should not happen
-                Log.e("softkeyboard", "Invalid bounds, using minimal fallback");
-                outInsets.touchableRegion.set((int)kFrameX, (int)kFrameY,
-                        (int)(kFrameX + kFrameWidth), (int)(kFrameY + kFrameHeight));
-            }
+            // Set only keyboard area as touchable
+            android.graphics.Region region = new android.graphics.Region();
+            region.set(left, top, right, bottom);
+            outInsets.touchableRegion.set(region);
 
-        } else {
-            // Normal mode - let super handle it completely
-            Log.d("softkeyboard", "Using default insets for normal mode");
+            Log.d("softkeyboard", "Float touchable region: " + left + "," + top + "," + right + "," + bottom);
+            Log.d("softkeyboard", "kFrame bounds: x=" + kFrameX + ", y=" + kFrameY + ", w=" + kFrame.getWidth() + ", h=" + kFrame.getHeight());
         }
-    }
-
-    @Override
-    public boolean onEvaluateInputViewShown() {
-        if (mIsCurrentlyFloating) {
-            return true; // Always show input view in floating mode
-        }
-        return super.onEvaluateInputViewShown();
+        // Normal mode: super.onComputeInsets() handles everything
     }
 
     @Override
     public boolean onEvaluateFullscreenMode() {
-        return false; // Never use fullscreen mode
+        // Never use fullscreen mode - it interferes with floating
+        return false;
     }
 
     // Add this new method to SoftKeyboard.java:
@@ -774,7 +748,6 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
-    // Update switchToFloatingMode and switchToNormalMode to recreate keyboards:
 
     private void switchToNormalMode() {
         isFloatingMode = false;
