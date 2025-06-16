@@ -482,10 +482,26 @@ public class SoftKeyboard extends InputMethodService
 
             final int inputHeight = mInputView.getHeight();
 
-            // INDUSTRY STANDARD: Use large offset to completely eliminate bottom keyboard presence
-            // This is based on the working industry implementation
-            outInsets.contentTopInsets = inputHeight + 5000;  // Industry uses visibleTopY + 1359
-            outInsets.visibleTopInsets = inputHeight + 5000;  // Same large offset for both
+            // DYNAMIC: Use actual screen height instead of hardcoded 1359
+            DisplayMetrics metrics = getResources().getDisplayMetrics();
+            // DYNAMIC: Use parent container height instead of hardcoded 1359
+            int containerHeight = 0;
+            if (parentContainer != null) {
+                containerHeight = parentContainer.getHeight();
+                Log.d("softkeyboard", "Parent container height: " + containerHeight);
+            } else {
+                // Fallback to inputHeight if container not available
+                containerHeight = inputHeight;
+                Log.w("softkeyboard", "Parent container null, using inputHeight as fallback: " + containerHeight);
+            }
+
+            int dynamicOffset = containerHeight; // Use container height as offset
+
+            Log.d("softkeyboard", "Using container height as dynamic offset: " + dynamicOffset);
+
+            // INDUSTRY STANDARD with DYNAMIC OFFSET: Use container height to completely eliminate bottom keyboard presence
+            outInsets.contentTopInsets = inputHeight + dynamicOffset;  // Now container-specific
+            outInsets.visibleTopInsets = inputHeight + dynamicOffset;  // Same dynamic offset for both
 
             // Use TOUCHABLE_INSETS_REGION so system knows we're only touchable in floating area
             outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION;
@@ -511,7 +527,7 @@ public class SoftKeyboard extends InputMethodService
             int bottom = (int)(kFrameY + yOffset + scaledHeight);
 
             // Validate bounds against screen
-            DisplayMetrics metrics = getResources().getDisplayMetrics();
+            metrics = getResources().getDisplayMetrics();
             right = Math.min(right, metrics.widthPixels);
             bottom = Math.min(bottom, metrics.heightPixels);
 
