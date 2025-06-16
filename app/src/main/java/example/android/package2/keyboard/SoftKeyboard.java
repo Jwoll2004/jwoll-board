@@ -547,35 +547,64 @@ public class SoftKeyboard extends InputMethodService
                 Log.w("softkeyboard", "mInputView is null in onComputeInsets()");
             }
 
-
             // Calculate heights for proper inset calculation
             int emojiRowHeight = 0;
             int topBarHeight = 0;
 
             if (emojiRowContainer != null) {
                 emojiRowHeight = emojiRowContainer.getHeight();
+                Log.d("softkeyboard", "Emoji row height: " + emojiRowHeight + ", visibility: " +
+                        (emojiRowContainer.getVisibility() == View.VISIBLE ? "VISIBLE" : "GONE/INVISIBLE"));
             }
 
+// DEBUG: Let's find out what's happening with the top bar
             if (mInputView != null) {
                 View normalModeBar = mInputView.findViewById(R.id.normal_mode_bar);
+                Log.d("softkeyboard", "normalModeBar found: " + (normalModeBar != null));
+
                 if (normalModeBar != null) {
+                    Log.d("softkeyboard", "normalModeBar visibility: " + normalModeBar.getVisibility());
+                    Log.d("softkeyboard", "normalModeBar width: " + normalModeBar.getWidth());
+                    Log.d("softkeyboard", "normalModeBar height: " + normalModeBar.getHeight());
+                    Log.d("softkeyboard", "normalModeBar measuredHeight: " + normalModeBar.getMeasuredHeight());
+
                     topBarHeight = normalModeBar.getHeight();
+
+                    // If height is 0, let's try to force measure
+                    if (topBarHeight == 0) {
+                        Log.d("softkeyboard", "Top bar height is 0, trying to force measure...");
+                        normalModeBar.measure(
+                                View.MeasureSpec.makeMeasureSpec(normalModeBar.getWidth(), View.MeasureSpec.EXACTLY),
+                                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                        );
+                        topBarHeight = normalModeBar.getMeasuredHeight();
+                        Log.d("softkeyboard", "After force measure, height: " + topBarHeight);
+
+                        // If STILL 0, use hardcoded value based on your XML (40dp)
+                        if (topBarHeight == 0) {
+                            topBarHeight = (int) (40 * getResources().getDisplayMetrics().density);
+                            Log.d("softkeyboard", "Using hardcoded fallback height: " + topBarHeight + "px (40dp)");
+                        }
+                    }
+                } else {
+                    Log.e("softkeyboard", "normalModeBar (R.id.normal_mode_bar) not found!");
+                    // Use hardcoded value since we can't find the view
+                    topBarHeight = (int) (40 * getResources().getDisplayMetrics().density);
+                    Log.d("softkeyboard", "Using hardcoded height since view not found: " + topBarHeight + "px");
                 }
             } else {
-                Log.w("softkeyboard", "mInputView is null when trying to find normal_mode_bar");
+                Log.e("softkeyboard", "mInputView is null!");
             }
 
-
-            // Calculate where actual keyboard content starts
+// Calculate where actual keyboard content starts
             int keyboardContentStart = emojiRowHeight + topBarHeight;
 
-            // Set proper insets for normal mode
-            outInsets.contentTopInsets = keyboardContentStart;
-            outInsets.visibleTopInsets = 0; // Visual content starts from top of emoji row
-            outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_VISIBLE;
-
-            Log.d("softkeyboard", "Normal insets - contentTop: " + outInsets.contentTopInsets +
-                    ", visibleTop: " + outInsets.visibleTopInsets);
+            Log.d("softkeyboard", "=== INSETS DEBUG ===");
+            Log.d("softkeyboard", "Total input height: " + inputHeight);
+            Log.d("softkeyboard", "Emoji row height: " + emojiRowHeight);
+            Log.d("softkeyboard", "Top bar height: " + topBarHeight);
+            Log.d("softkeyboard", "Keyboard content start offset: " + keyboardContentStart);
+            Log.d("softkeyboard", "Detected as chat app: " + isChatTextBox);
         }
     }
 
@@ -862,7 +891,7 @@ public class SoftKeyboard extends InputMethodService
             int visibility = isChatTextBox ? View.VISIBLE : View.GONE;
             emojiRowContainer.setVisibility(visibility);
 
-            Log.d("ChatDetection", "Emoji row visibility: " + (isChatTextBox ? "VISIBLE" : "GONE"));
+            Log.d("softkeyboard", "Emoji row visibility: " + (isChatTextBox ? "VISIBLE" : "GONE"));
         }
     }
 
