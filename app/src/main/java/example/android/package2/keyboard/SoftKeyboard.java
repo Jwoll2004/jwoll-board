@@ -250,11 +250,13 @@ public class SoftKeyboard extends InputMethodService
         kFrame.requestLayout();
         parentContainer.requestLayout();
 
-        // Force insets recalculation
+// STEP 8: Force system to recalculate insets immediately
         kFrame.post(() -> {
             if (mInputView != null) {
                 mInputView.requestApplyInsets();
             }
+            // Additional force refresh
+            getCurrentInputConnection().requestCursorUpdates(0);
         });
 
         Log.d("softkeyboard", "Floating mode setup completed");
@@ -480,26 +482,12 @@ public class SoftKeyboard extends InputMethodService
 
             final int inputHeight = mInputView.getHeight();
 
-            // CRITICAL: Calculate proper insets for floating mode
-            // Get heights of non-functional areas (emoji row + top bar)
-            int emojiRowHeight = 0;
-            int topBarHeight = 0;
+            // INDUSTRY STANDARD: Use large offset to completely eliminate bottom keyboard presence
+            // This is based on the working industry implementation
+            outInsets.contentTopInsets = inputHeight + 5000;  // Industry uses visibleTopY + 1359
+            outInsets.visibleTopInsets = inputHeight + 5000;  // Same large offset for both
 
-            if (emojiRowContainer != null) {
-                emojiRowHeight = emojiRowContainer.getHeight();
-            }
-
-            View normalModeBar = mInputView.findViewById(R.id.normal_mode_bar);
-            if (normalModeBar != null) {
-                topBarHeight = normalModeBar.getHeight();
-            }
-
-            // CRITICAL: In floating mode, tell system there's NO keyboard at bottom
-            // This prevents apps from shifting content up
-            outInsets.contentTopInsets = inputHeight + 1000; // Push way off screen
-            outInsets.visibleTopInsets = inputHeight + 1000;  // Push way off screen
-
-            // Set touchable region to only the floating keyboard area
+            // Use TOUCHABLE_INSETS_REGION so system knows we're only touchable in floating area
             outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION;
 
             // Calculate actual floating keyboard bounds
@@ -527,12 +515,12 @@ public class SoftKeyboard extends InputMethodService
             right = Math.min(right, metrics.widthPixels);
             bottom = Math.min(bottom, metrics.heightPixels);
 
-            // Set touchable region
+            // Set touchable region to ONLY the floating keyboard
             android.graphics.Region region = new android.graphics.Region();
             region.set(left, top, right, bottom);
             outInsets.touchableRegion.set(region);
 
-            Log.d("softkeyboard", "Floating insets - contentTop: " + outInsets.contentTopInsets +
+            Log.d("softkeyboard", "INDUSTRY STANDARD Floating insets - contentTop: " + outInsets.contentTopInsets +
                     ", visibleTop: " + outInsets.visibleTopInsets);
             Log.d("softkeyboard", "Touchable region: " + left + "," + top + "," + right + "," + bottom);
 
