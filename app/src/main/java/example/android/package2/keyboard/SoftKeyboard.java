@@ -675,14 +675,29 @@ public class SoftKeyboard extends InputMethodService
     public void onComputeInsets(InputMethodService.Insets outInsets) {
         super.onComputeInsets(outInsets);
 
+        Log.d("softkeyboard", "=== onComputeInsets called ===");
+        Log.d("softkeyboard", "  isFloatingMode: " + isFloatingMode);
+        // Log what super.onComputeInsets set
+        Log.d("softkeyboard", "  After super - contentTopInsets: " + outInsets.contentTopInsets);
+        Log.d("softkeyboard", "  After super - visibleTopInsets: " + outInsets.visibleTopInsets);
+
+        if (kFrame != null) {
+            Log.d("softkeyboard", "  kFrame visibility: " + kFrame.getVisibility());
+            Log.d("softkeyboard", "  kFrame position: (" + kFrame.getX() + ", " + kFrame.getY() + ")");
+            Log.d("softkeyboard", "  kFrame size: " + kFrame.getWidth() + "x" + kFrame.getHeight());
+            Log.d("softkeyboard", "  kFrame scale: " + kFrame.getScaleX() + ", " + kFrame.getScaleY());
+        }
+
+
         if (isFloatingMode && kFrame != null && kFrame.getWidth() > 0 && kFrame.getHeight() > 0
                 && kFrame.getVisibility() == View.VISIBLE) {
-            Log.d("softkeyboard", "Setting floating mode insets");
+            Log.d("softkeyboard", "Computing floating mode insets");
 
             // CRITICAL: In floating mode, tell the app there's no keyboard taking up bottom space
             outInsets.contentTopInsets = 0;
             outInsets.visibleTopInsets = 0;
             outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION;
+            Log.d("softkeyboard", "Floating mode: set insets to 0 (no layout adjustment needed)");
 
             // Calculate the actual floating keyboard bounds for touch handling
             float kFrameX = kFrame.getX();
@@ -714,7 +729,17 @@ public class SoftKeyboard extends InputMethodService
 
             Log.d("softkeyboard", "Float touchable region: " + left + "," + top + "," + right + "," + bottom);
             Log.d("softkeyboard", "kFrame bounds: x=" + kFrameX + ", y=" + kFrameY + ", w=" + kFrame.getWidth() + ", h=" + kFrame.getHeight());
+            Log.d("softkeyboard", "=== onComputeInsets completed ===");
+        } else{
+            if (outInsets.contentTopInsets > 0) {
+                Log.d("softkeyboard", "Normal mode: saved keyboard height from insets: " + outInsets.contentTopInsets);
+            }
+            Log.d("softkeyboard", "Normal mode insets (unchanged from super):");
+            Log.d("softkeyboard", "  contentTopInsets: " + outInsets.contentTopInsets);
+            Log.d("softkeyboard", "  visibleTopInsets: " + outInsets.visibleTopInsets);
+            Log.d("softkeyboard", "=== onComputeInsets completed ===");
         }
+
         // Normal mode: Let super.onComputeInsets() handle everything as usual
     }
 
