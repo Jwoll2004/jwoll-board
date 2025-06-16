@@ -500,42 +500,6 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
-    private void positionKeyboardInCenter() {
-        // Get screen dimensions
-        DisplayMetrics metrics = getResources().getDisplayMetrics();
-        int screenWidth = metrics.widthPixels;
-        int screenHeight = metrics.heightPixels;
-
-        // Calculate position
-        float targetX, targetY;
-
-        if (savedFloatX == 0 && savedFloatY == 0) {
-            // First time - position in center-ish area
-            targetX = screenWidth * 0.05f; // 10% from left
-            targetY = screenHeight * 0.3f; // 30% from top
-        } else {
-            // Use saved position
-            targetX = savedFloatX;
-            targetY = savedFloatY;
-        }
-
-        // Ensure position is within bounds
-        float maxX = screenWidth - (kFrame.getWidth() * 0.8f);
-        float maxY = screenHeight - (kFrame.getHeight() * 0.8f);
-
-        targetX = Math.max(0, Math.min(targetX, maxX));
-        targetY = Math.max(0, Math.min(targetY, maxY));
-
-        Log.d("FloatKeyboard", String.format("Positioning keyboard at: x=%f, y=%f", targetX, targetY));
-
-        // Move keyboard using BobbleKeyboard method
-        kFrame.animate().x(targetX).y(targetY).setDuration(0).start();
-
-        // Save position
-        savedFloatX = targetX;
-        savedFloatY = targetY;
-    }
-
     private void resetContainerToNormal() {
         if (parentContainer == null) return;
 
