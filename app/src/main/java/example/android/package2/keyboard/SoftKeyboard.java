@@ -75,10 +75,7 @@ public class SoftKeyboard extends InputMethodService
     private WindowManager overlayWindowManager;
     private View overlayView;
     private boolean isOverlayVisible = false;
-
     private boolean mKeyboardsInitialized = false;
-    private boolean mIsCurrentlyFloating = false;
-
 
     // Core float variables following BobbleKeyboard
     private RelativeLayout kFrame;
@@ -88,28 +85,21 @@ public class SoftKeyboard extends InputMethodService
     // Position storage (static to persist between toggles)
     private static float savedFloatX = 0;
     private static float savedFloatY = 0;
-
     // Touch handling
     private float initialTouchX = 0;
     private float initialTouchY = 0;
-
     // Window management
-    private Dialog mDialog;
     private View parentContainer;
-
     // Chat detection fields
     private boolean isChatTextBox = false;
     private View emojiRowContainer;
-
     private Button floatToggleButton;
-
     @Override
     public void onCreate() {
         super.onCreate();
         mInputMethodManager = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         mWordSeparators = getResources().getString(R.string.word_separators);
     }
-
     @NonNull
     Context getDisplayContext() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
@@ -121,7 +111,6 @@ public class SoftKeyboard extends InputMethodService
         final WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         return createDisplayContext(wm.getDefaultDisplay());
     }
-
     @Override
     public void onInitializeInterface() {
         final Context displayContext = getDisplayContext();
@@ -141,7 +130,6 @@ public class SoftKeyboard extends InputMethodService
 
         Log.d("SoftKeyboard", "Keyboards initialized");
     }
-
     @Override
     public View onCreateInputView() {
         View normalLayout = getLayoutInflater().inflate(R.layout.normal_keyboard_layout_with_emoji, null);
@@ -470,7 +458,6 @@ public class SoftKeyboard extends InputMethodService
         }
         return super.onEvaluateInputViewShown();
     }
-
     @Override
     public void onComputeInsets(InputMethodService.Insets outInsets) {
         super.onComputeInsets(outInsets);
@@ -611,13 +598,11 @@ public class SoftKeyboard extends InputMethodService
             Log.d("softkeyboard", "Detected as chat app: " + isChatTextBox);
         }
     }
-
     @Override
     public boolean onEvaluateFullscreenMode() {
         // Never use fullscreen mode - it interferes with floating
         return false;
     }
-
     // Add this new method to SoftKeyboard.java:
     private void setupSharingButtons(View layout) {
         Button shareTextButton = layout.findViewById(R.id.share_text_button);
@@ -628,8 +613,6 @@ public class SoftKeyboard extends InputMethodService
             });
         }
     }
-
-
     private void switchToNormalMode() {
         isFloatingMode = false;
 
@@ -645,7 +628,6 @@ public class SoftKeyboard extends InputMethodService
             onStartInputView(currentEditorInfo, true);
         }
     }
-
     private void hideOverlay() {
         if (overlayView != null && overlayWindowManager != null && isOverlayVisible) {
             try {
@@ -656,11 +638,9 @@ public class SoftKeyboard extends InputMethodService
             }
         }
     }
-
     private void setLatinKeyboard(LatinKeyboard nextKeyboard) {
         setActiveKeyboard(nextKeyboard);
     }
-
     @Override
     public void onStartInput(EditorInfo attribute, boolean restarting) {
         super.onStartInput(attribute, restarting);
@@ -725,7 +705,6 @@ public class SoftKeyboard extends InputMethodService
             mCurKeyboard.setImeOptions(getResources(), attribute.imeOptions);
         }
     }
-
     private boolean detectChatTextBox(EditorInfo editorInfo) {
         if (editorInfo == null) return false;
 
@@ -815,7 +794,6 @@ public class SoftKeyboard extends InputMethodService
 
         return isChatDetected;
     }
-
     private void logInputFlags(int inputFlags) {
         Log.d("ChatDetection", "Input Flags Analysis:");
 
@@ -844,7 +822,6 @@ public class SoftKeyboard extends InputMethodService
             Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_NO_SUGGESTIONS");
         }
     }
-
     private String getInputClassName(int inputClass) {
         switch (inputClass) {
             case InputType.TYPE_CLASS_TEXT: return "TYPE_CLASS_TEXT";
@@ -854,7 +831,6 @@ public class SoftKeyboard extends InputMethodService
             default: return "UNKNOWN";
         }
     }
-
     private String getInputVariationName(int inputVariation) {
         switch (inputVariation) {
             case InputType.TYPE_TEXT_VARIATION_NORMAL: return "TYPE_TEXT_VARIATION_NORMAL";
@@ -875,7 +851,6 @@ public class SoftKeyboard extends InputMethodService
             default: return "UNKNOWN";
         }
     }
-
     private String getImeActionName(int actionId) {
         switch (actionId) {
             case EditorInfo.IME_ACTION_UNSPECIFIED: return "IME_ACTION_UNSPECIFIED";
@@ -889,7 +864,6 @@ public class SoftKeyboard extends InputMethodService
             default: return "UNKNOWN";
         }
     }
-
     private void updateEmojiRowVisibility() {
         if (emojiRowContainer != null) {
             int visibility = isChatTextBox ? View.VISIBLE : View.GONE;
@@ -898,139 +872,6 @@ public class SoftKeyboard extends InputMethodService
             Log.d("softkeyboard", "Emoji row visibility: " + (isChatTextBox ? "VISIBLE" : "GONE"));
         }
     }
-
-    /**
-     * Send emoji directly using commitContent API for chat apps
-     */
-    public boolean sendEmojiDirectly(String emojiUnicode) {
-        InputConnection ic = getCurrentInputConnection();
-        if (ic == null || !isChatTextBox) {
-            Log.d("EmojiSend", "Cannot send directly - no input connection or not in chat");
-            return false;
-        }
-
-        try {
-            // Create emoji image
-            Bitmap emojiImage = createEmojiImage(emojiUnicode);
-            if (emojiImage == null) {
-                Log.e("EmojiSend", "Failed to create emoji image");
-                return false;
-            }
-
-            // Save to temporary file using internal storage to avoid FileProvider issues
-            File imageFile = saveEmojiImageToInternal(emojiImage, "direct_emoji_" + System.currentTimeMillis() + ".png");
-            if (imageFile == null) {
-                Log.e("EmojiSend", "Failed to save emoji image");
-                return false;
-            }
-
-            // Get URI using FileProvider with correct path
-            Uri imageUri = androidx.core.content.FileProvider.getUriForFile(
-                    this,
-                    getPackageName() + ".fileprovider",
-                    imageFile
-            );
-
-            Log.d("EmojiSend", "Created URI: " + imageUri.toString());
-
-            // Create InputContentInfo
-            androidx.core.view.inputmethod.InputContentInfoCompat contentInfo =
-                    new androidx.core.view.inputmethod.InputContentInfoCompat(
-                            imageUri,
-                            new android.content.ClipDescription("Emoji", new String[]{"image/png"}),
-                            null
-                    );
-
-            // Use InputConnectionCompat to commit content
-            int flags = androidx.core.view.inputmethod.InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION;
-
-            boolean success = androidx.core.view.inputmethod.InputConnectionCompat.commitContent(
-                    ic,
-                    getCurrentInputEditorInfo(),
-                    contentInfo,
-                    flags,
-                    null
-            );
-
-            Log.d("EmojiSend", "Direct emoji send result: " + success);
-
-            // Clean up temp file after a delay
-            new android.os.Handler().postDelayed(() -> {
-                try {
-                    if (imageFile.exists()) {
-                        imageFile.delete();
-                        Log.d("EmojiSend", "Cleaned up temp file");
-                    }
-                } catch (Exception e) {
-                    Log.e("EmojiSend", "Error cleaning up temp file", e);
-                }
-            }, 5000); // 5 second delay
-
-            return success;
-
-        } catch (Exception e) {
-            Log.e("EmojiSend", "Error in sendEmojiDirectly", e);
-            return false;
-        }
-    }
-
-    /**
-     * Save emoji image to internal temp directory
-     */
-    private File saveEmojiImageToInternal(Bitmap bitmap, String filename) {
-        try {
-            // Use internal files directory instead of external
-            File directory = new File(getFilesDir(), "temp_emoji");
-            if (!directory.exists()) {
-                directory.mkdirs();
-            }
-
-            File file = new File(directory, filename);
-            java.io.FileOutputStream out = new java.io.FileOutputStream(file);
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
-            out.close();
-
-            Log.d("EmojiSend", "Saved emoji image to: " + file.getAbsolutePath());
-            return file;
-        } catch (Exception e) {
-            Log.e("EmojiSend", "Error saving temp emoji image", e);
-            return null;
-        }
-    }
-
-    /**
-     * Create bitmap image from emoji unicode
-     */
-    private Bitmap createEmojiImage(String emoji) {
-        try {
-            int size = 200;
-            Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(bitmap);
-
-            // White background
-            canvas.drawColor(android.graphics.Color.WHITE);
-
-            // Setup paint for emoji
-            Paint paint = new Paint();
-            paint.setAntiAlias(true);
-            paint.setTextSize(120f);
-            paint.setTypeface(android.graphics.Typeface.DEFAULT);
-            paint.setTextAlign(Paint.Align.CENTER);
-
-            // Calculate position to center the emoji
-            float x = size / 2f;
-            float y = size / 2f - (paint.descent() + paint.ascent()) / 2f;
-
-            // Draw emoji
-            canvas.drawText(emoji, x, y, paint);
-
-            return bitmap;
-        } catch (Exception e) {
-            Log.e("EmojiSend", "Error creating emoji image", e);
-            return null;
-        }
-    }
-
     @Override
     public void onStartInputView(EditorInfo attribute, boolean restarting) {
         super.onStartInputView(attribute, restarting);
@@ -1046,14 +887,12 @@ public class SoftKeyboard extends InputMethodService
 
         updateEmojiRowVisibility();
     }
-
     @Override
     public void onCurrentInputMethodSubtypeChanged(InputMethodSubtype subtype) {
         if (mInputView != null) {
             mInputView.setSubtypeOnSpaceKey(subtype);
         }
     }
-
     private void updateShiftKeyState(EditorInfo attr) {
         Log.d("softkeyboard", "=== updateShiftKeyState called ===");
         Log.d("softkeyboard", "Before update - shift: " + (mInputView != null && mQwertyKeyboard == mInputView.getKeyboard() ? mQwertyKeyboard.isShifted() : "N/A"));
@@ -1083,8 +922,6 @@ public class SoftKeyboard extends InputMethodService
 
         Log.d("softkeyboard", "=== updateShiftKeyState completed ===");
     }
-
-
     @Override
     public void onKey(int primaryCode, int[] keyCodes) {
         Log.d("softkeyboard", "=== onKey called ===");
@@ -1195,7 +1032,11 @@ public class SoftKeyboard extends InputMethodService
                 break;
         }
     }
-
+    // Keep this simple delegation method in SoftKeyboard.java
+    public boolean sendEmojiDirectly(String emojiUnicode) {
+        // Delegate to Kotlin extension
+        return SoftKeyboardSharingExtensionKt.sendEmojiDirectly(this, emojiUnicode);
+    }
     public boolean isWordSeparator(int code) {
         String separators = mWordSeparators;
         return separators.contains(String.valueOf((char)code));
@@ -1214,7 +1055,6 @@ public class SoftKeyboard extends InputMethodService
                 break;
         }
     }
-
     private String getLastWordFromCommittedText() {
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return "";
@@ -1241,7 +1081,6 @@ public class SoftKeyboard extends InputMethodService
 
         return "";
     }
-
     private void notifyEmojiManagersWordCompletion(String lastWord) {
         Log.d("EmojiDebug", "notifyEmojiManagersWordCompletion: last word: '" + lastWord + "'");
 
@@ -1275,7 +1114,6 @@ public class SoftKeyboard extends InputMethodService
 
 
     }
-
     private String getCurrentWord() {
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return "";
@@ -1344,7 +1182,6 @@ public class SoftKeyboard extends InputMethodService
             return "";
         }
     }
-
     private boolean isAtEndOfWord() {
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return false;

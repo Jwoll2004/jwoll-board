@@ -28,7 +28,7 @@ class EmojiManager(
 
     // Dynamic sizing constants
     private companion object {
-        private const val TAG = "EmojiManager"
+        private const val TAG = "EmojiSend"
         private const val EMOJI_SPAN_COUNT = 8
         private const val MIN_EMOJI_SIZE_DP = 32
         private const val MAX_EMOJI_SIZE_DP = 48
@@ -179,10 +179,6 @@ class EmojiManager(
             onEmojiSelected(emoji.unicode)
         }
     }
-
-    /**
-     * Handle emoji long press for direct sending in chat apps
-     */
     private fun handleEmojiLongPress(emoji: Emoji) {
         Log.d(TAG, "handleEmojiLongPress: ${emoji.unicode}")
 
@@ -192,6 +188,8 @@ class EmojiManager(
             if (success) {
                 Log.d(TAG, "Emoji sent directly via commitContent")
                 return
+            } else {
+                Log.d(TAG, "Direct send failed, falling back to image sharing")
             }
         }
 

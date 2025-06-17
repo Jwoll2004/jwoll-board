@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-files-path name="emoji_images" path="Pictures/emoji_images/" />
+    <!-- Existing paths -->
+    <files-path name="files" path="." />
+    <external-files-path name="external_files" path="." />
+
+    <!-- Add these new paths for sticker support -->
     <files-path name="temp_emoji" path="temp_emoji/" />
+    <files-path name="temp_stickers" path="temp_stickers/" />
 </paths>

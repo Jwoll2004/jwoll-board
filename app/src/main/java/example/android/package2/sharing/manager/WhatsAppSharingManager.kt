@@ -61,8 +61,12 @@ class WhatsAppSharingManager(private val context: Context) {
             // Create emoji image
             val emojiImage = createEmojiImage(emoji)
 
-            // Save image to file
-            val imageFile = saveImageToFile(emojiImage, "emoji_${System.currentTimeMillis()}.png")
+            // Save image to file with appropriate format
+            val imageFile = if (targetApp.packageName.contains("whatsapp")) {
+                saveImageAsWebPSticker(emojiImage, "emoji_sticker_${System.currentTimeMillis()}.webp")
+            } else {
+                saveImageToFile(emojiImage, "emoji_${System.currentTimeMillis()}.png")
+            }
 
             if (imageFile != null) {
                 shareImageToMessagingApp(imageFile, targetApp)
@@ -71,8 +75,63 @@ class WhatsAppSharingManager(private val context: Context) {
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to share emoji as image to ${targetApp?.name}", e)
+            Log.e(TAG, "Failed to share emoji as image to ${targetApp.name}", e)
             Toast.makeText(context, "Failed to share emoji as image", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun saveImageAsWebPSticker(bitmap: Bitmap, filename: String): File? {
+        return try {
+            val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "emoji_stickers")
+
+            if (!directory.exists()) {
+                directory.mkdirs()
+            }
+
+            val file = File(directory, filename)
+
+            FileOutputStream(file).use { out ->
+                // Use WebP format for WhatsApp stickers
+                bitmap.compress(Bitmap.CompressFormat.WEBP, 90, out)
+            }
+
+            Log.d(TAG, "WebP sticker saved to: ${file.absolutePath}")
+            file
+
+        } catch (e: IOException) {
+            Log.e(TAG, "Failed to save WebP sticker", e)
+            null
+        }
+    }
+
+    private fun shareImageToMessagingApp(imageFile: File, targetApp: MessagingApp) {
+        try {
+            val imageUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                imageFile
+            )
+
+            val mimeType = if (targetApp.packageName.contains("whatsapp") && imageFile.name.endsWith(".webp")) {
+                "image/webp.wasticker"
+            } else {
+                "image/png"
+            }
+
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = mimeType
+                setPackage(targetApp.packageName)
+                putExtra(Intent.EXTRA_STREAM, imageUri)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
+            context.startActivity(intent)
+            Log.d(TAG, "Image shared to ${targetApp.name}: ${imageFile.name} ($mimeType)")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to share image to ${targetApp.name}", e)
+            Toast.makeText(context, "Failed to share image to ${targetApp.name}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -123,31 +182,6 @@ class WhatsAppSharingManager(private val context: Context) {
         } catch (e: IOException) {
             Log.e(TAG, "Failed to save image", e)
             null
-        }
-    }
-
-    private fun shareImageToMessagingApp(imageFile: File, targetApp: MessagingApp) {
-        try {
-            val imageUri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                imageFile
-            )
-
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "image/png"
-                setPackage(targetApp.packageName)
-                putExtra(Intent.EXTRA_STREAM, imageUri)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-
-            context.startActivity(intent)
-            Log.d(TAG, "Image shared to ${targetApp.name}: ${imageFile.name}")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to share image to ${targetApp.name}", e)
-            Toast.makeText(context, "Failed to share image to ${targetApp.name}", Toast.LENGTH_SHORT).show()
         }
     }
 

@@ -40,7 +40,7 @@ class EmojiAdapter(
         }
 
         holder.itemView.setOnLongClickListener {
-            onEmojiLongClick(emoji)  // Callback to manager
+            onEmojiLongClick(emoji)
             true
         }
 
