@@ -1,5 +1,6 @@
 package example.android.package2.keyboard;
 
+import android.annotation.SuppressLint;
 import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -49,10 +50,8 @@ public class SoftKeyboard extends InputMethodService
 
     static final boolean PROCESS_HARD_KEYS = true;
 
-    // Add these fields to your SoftKeyboard class
     private EmojiManager normalEmojiManager;
 
-    // Add these fields at the top of the class
     private boolean isFloatingMode = false;
 
     private InputMethodManager mInputMethodManager;
@@ -71,21 +70,16 @@ public class SoftKeyboard extends InputMethodService
     private LatinKeyboard mCurKeyboard;
     private String mWordSeparators;
 
-    // Overlay functionality fields
     private static final String TAG = "FloatingKeyboard";
     private WindowManager overlayWindowManager;
     private View overlayView;
     private boolean isOverlayVisible = false;
     private boolean mKeyboardsInitialized = false;
 
-    // Core float variables following BobbleKeyboard
     private RelativeLayout kFrame;
     private LinearLayout kNavBar;
     private LinearLayout navBarIndicator;
 
-    // Position storage (static to persist between toggles)
-    private static float savedFloatX = 0;
-    private static float savedFloatY = 0;
     // Touch handling
     private float initialTouchX = 0;
     private float initialTouchY = 0;
@@ -95,21 +89,29 @@ public class SoftKeyboard extends InputMethodService
     private boolean isChatTextBox = false;
     private View emojiRowContainer;
     private Button floatToggleButton;
-    // Add these fields to your SoftKeyboard class
-    private FrameLayout kTLBtn;  // Top Left resize button
-    private FrameLayout kTRBtn;  // Top Right resize button
-    private FrameLayout kBLBtn;  // Bottom Left resize button
-    private FrameLayout kBRBtn;  // Bottom Right resize button
+    private FrameLayout kTLBtn;
+    private FrameLayout kTRBtn;
+    private FrameLayout kBLBtn;
+    private FrameLayout kBRBtn;
 
-    // Update these constants in your class
-    private static final float MIN_SCALE = 0.5f;          // 50% minimum
-    private static final float MAX_SCALE = 0.9f;          // 100% maximum in portrait
-    private static final float MIN_SCALE_LANDSCAPE = 0.4f; // 40% minimum in landscape
-    private static final float MAX_SCALE_LANDSCAPE = 0.9f; // 90% maximum in landscape
+    private static final float MIN_SCALE = 0.6f;
+    private static final float MAX_SCALE = 0.9f;
+    private static final float MIN_SCALE_LANDSCAPE = 0.4f;
+    private static final float MAX_SCALE_LANDSCAPE = 0.9f;
 
-    // Temporary variables for resize calculations
+    // Position storage
+    private static float savedFloatX = Float.NaN;
+    private static float savedFloatY = Float.NaN;
+    private static float savedFloatScale = 0.8f;
+
+    // Temp vars for resize calculations
     private float temp1 = 0; // X offset for scaling
     private float temp2 = 0; // Y offset for scaling
+
+    private boolean isResizeInProgress = false;
+    private android.os.Handler resizeButtonHandler = new android.os.Handler();
+    private Runnable hideResizeButtonsRunnable = null;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -224,57 +226,98 @@ public class SoftKeyboard extends InputMethodService
 
         Log.d("softkeyboard", "=== ENTERING FLOATING MODE ===");
 
-        // STEP 1: Set floating mode flag FIRST
         isFloatingMode = true;
-
-        // STEP 2: Setup container for floating (minimal approach)
         setupFloatingContainer();
 
-        // STEP 3: Calculate target position
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         int screenWidth = metrics.widthPixels;
         int screenHeight = metrics.heightPixels;
 
         float targetX, targetY;
-        if (savedFloatX == 0 && savedFloatY == 0) {
-            targetX = screenWidth * 0.05f;
-            targetY = screenHeight * 0.3f;
+        if (Float.isNaN(savedFloatX) || Float.isNaN(savedFloatY)) {
+            targetX = (screenWidth - kFrame.getWidth()) / 2f;
+            targetY = (screenHeight - kFrame.getHeight()) / 2f;
         } else {
             targetX = savedFloatX;
             targetY = savedFloatY;
         }
 
-        // STEP 4: Apply transformations
-        kFrame.setScaleX(0.8f);
-        kFrame.setScaleY(0.8f);
+        Log.d("softkeyboard", "Restoring saved scale: " + savedFloatScale);
+        kFrame.setScaleX(savedFloatScale);
+        kFrame.setScaleY(savedFloatScale);
         kFrame.setX(targetX);
         kFrame.setY(targetY);
 
-        // STEP 5: Show drag handle
         if (kNavBar != null) {
             kNavBar.setVisibility(View.VISIBLE);
         }
 
-        // STEP 6: Update button text
         updateFloatToggleButtonText();
 
-        // STEP 7: Request layout and insets update
         kFrame.requestLayout();
         parentContainer.requestLayout();
 
-        // STEP 8: Force system to recalculate insets immediately
         kFrame.post(() -> {
             if (mInputView != null) {
                 mInputView.requestApplyInsets();
             }
-            // Additional force refresh
             getCurrentInputConnection().requestCursorUpdates(0);
+
+            positionResizeButtons();
         });
 
         showResizeButtons();
         hideResizeButtonsDelayed();
 
-        Log.d("softkeyboard", "Floating mode setup completed");
+        Log.d("softkeyboard", "Floating mode setup completed with saved scale: " + savedFloatScale);
+    }
+    private void positionResizeButtons() {
+        if (kFrame == null) return;
+
+        float kFrameX = kFrame.getX();
+        float kFrameY = kFrame.getY();
+        float scaleX = kFrame.getScaleX();
+        float scaleY = kFrame.getScaleY();
+
+        // Calculate scaled dimensions
+        float scaledWidth = kFrame.getWidth() * scaleX;
+        float scaledHeight = kFrame.getHeight() * scaleY;
+
+        // Account for scaling from center
+        float xOffset = (kFrame.getWidth() - scaledWidth) / 2f;
+        float yOffset = (kFrame.getHeight() - scaledHeight) / 2f;
+
+        // Calculate visual bounds
+        float visualLeft = kFrameX + xOffset;
+        float visualTop = kFrameY + yOffset;
+        float visualRight = visualLeft + scaledWidth;
+        float visualBottom = visualTop + scaledHeight;
+
+        int buttonSize = (int) (16 * getResources().getDisplayMetrics().density);
+        int buttonOffset = buttonSize / 2;
+
+        // Position buttons just outside the visual corners
+        if (kTLBtn != null) {
+            kTLBtn.setX(visualLeft - buttonOffset);
+            kTLBtn.setY(visualTop - buttonOffset);
+        }
+
+        if (kTRBtn != null) {
+            kTRBtn.setX(visualRight - buttonOffset);
+            kTRBtn.setY(visualTop - buttonOffset);
+        }
+
+        if (kBLBtn != null) {
+            kBLBtn.setX(visualLeft - buttonOffset);
+            kBLBtn.setY(visualBottom - buttonOffset);
+        }
+
+        if (kBRBtn != null) {
+            kBRBtn.setX(visualRight - buttonOffset);
+            kBRBtn.setY(visualBottom - buttonOffset);
+        }
+
+        Log.d("softkeyboard", "Resize buttons (16dp) positioned at corners of floating keyboard");
     }
     private void setupFloatingContainer() {
         if (parentContainer == null || kFrame == null) return;
@@ -282,8 +325,7 @@ public class SoftKeyboard extends InputMethodService
         try {
             Log.d("softkeyboard", "=== Setting up floating container ===");
 
-            // MINIMAL approach: Don't change window properties
-            // Just ensure container doesn't clip the floating keyboard
+            // Just ensure container doesn't clip the floating keyboard or resize buttons
             if (parentContainer instanceof ViewGroup) {
                 ((ViewGroup) parentContainer).setClipChildren(false);
                 ((ViewGroup) parentContainer).setClipToPadding(false);
@@ -295,12 +337,14 @@ public class SoftKeyboard extends InputMethodService
             ViewGroup.LayoutParams containerParams = parentContainer.getLayoutParams();
             if (containerParams != null) {
                 containerParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
-                containerParams.height = metrics.heightPixels; // Allow full height for positioning
+                // extra height for resize buttons that extend outside
+                int resizeButtonExtraHeight = (int) (32 * metrics.density); // 16dp * 2 for top and bottom
+                containerParams.height = metrics.heightPixels + resizeButtonExtraHeight;
                 parentContainer.setLayoutParams(containerParams);
             }
 
             parentContainer.requestLayout();
-            Log.d("softkeyboard", "Container configured for floating without window changes");
+            Log.d("softkeyboard", "Container configured for floating with resize button space");
 
         } catch (Exception e) {
             Log.e("softkeyboard", "Error setting up floating container", e);
@@ -338,19 +382,18 @@ public class SoftKeyboard extends InputMethodService
 
         Log.d("softkeyboard", "=== EXITING FLOATING MODE ===");
 
-        // STEP 1: Reset floating mode flag
+        savedFloatScale = kFrame.getScaleX();
+        Log.d("softkeyboard", "Saving current scale: " + savedFloatScale);
+
         isFloatingMode = false;
         updateFloatToggleButtonText();
 
-        // STEP 2: Reset container
         resetFloatingContainer();
 
-        // STEP 3: Hide drag handle
         if (kNavBar != null) {
             kNavBar.setVisibility(View.GONE);
         }
 
-        // STEP 4: Reset transformations
         hideResizeButtons();
         kFrame.setScaleX(1.0f);
         kFrame.setScaleY(1.0f);
@@ -358,25 +401,23 @@ public class SoftKeyboard extends InputMethodService
         temp2 = 0;
         kFrame.setAlpha(1.0f);
 
-        // STEP 5: Reset position
         kFrame.setX(0f);
         kFrame.setY(0f);
         kFrame.setTranslationX(0f);
         kFrame.setTranslationY(0f);
 
-        // STEP 6: Request layout updates
         kFrame.requestLayout();
         parentContainer.requestLayout();
 
-        // Force insets recalculation
         kFrame.post(() -> {
             if (mInputView != null) {
                 mInputView.requestApplyInsets();
             }
         });
 
-        Log.d("softkeyboard", "Exit floating mode completed");
+        Log.d("softkeyboard", "Exit floating mode completed, scale saved: " + savedFloatScale);
     }
+    @SuppressLint("ClickableViewAccessibility")
     private void setupDragHandling() {
         if (kNavBar == null) return;
 
@@ -386,66 +427,66 @@ public class SoftKeyboard extends InputMethodService
             switch (event.getAction()) {
                 case MotionEvent.ACTION_DOWN:
                     Log.d("softkeyboard", "DRAG: ACTION_DOWN - touch detected on kNavBar");
+
+                    // MODIFICATION: Cancel delayed hide during drag
+                    cancelDelayedHide();
+
                     kFrame.setAlpha(0.5f);
                     initialTouchX = kFrame.getX() - event.getRawX();
                     initialTouchY = kFrame.getY() - event.getRawY();
 
-                    // Show resize buttons when dragging starts
                     showResizeButtons();
                     return true;
 
                 case MotionEvent.ACTION_MOVE:
                     Log.d("softkeyboard", "DRAG: ACTION_MOVE - dragging");
-                    float newX = event.getRawX() + initialTouchX;
-                    float newY = event.getRawY() + initialTouchY;
+                    float targetX = event.getRawX() + initialTouchX;
+                    float targetY = event.getRawY() + initialTouchY;
 
-                    // Get screen bounds
                     DisplayMetrics metrics = getResources().getDisplayMetrics();
                     int screenWidth = metrics.widthPixels;
                     int screenHeight = metrics.heightPixels;
 
-                    // Get current scale for proper bounds calculation
                     float scaleX = kFrame.getScaleX();
                     float scaleY = kFrame.getScaleY();
 
-                    // Calculate actual visual dimensions
                     float kFrameWidth = kFrame.getWidth();
                     float kFrameHeight = kFrame.getHeight();
                     float visualWidth = kFrameWidth * scaleX;
                     float visualHeight = kFrameHeight * scaleY;
 
-                    // Calculate offsets due to scaling from center
                     float xOffset = (kFrameWidth - visualWidth) / 2f;
                     float yOffset = (kFrameHeight - visualHeight) / 2f;
 
-                    // Calculate where visual edges would be
-                    float visualLeft = newX + xOffset;
-                    float visualRight = newX + xOffset + visualWidth;
-                    float visualTop = newY + yOffset;
-                    float visualBottom = newY + yOffset + visualHeight;
+                    float visualLeft = targetX + xOffset;
+                    float visualRight = targetX + xOffset + visualWidth;
+                    float visualTop = targetY + yOffset;
+                    float visualBottom = targetY + yOffset + visualHeight;
 
-                    // Apply bounds constraints with better margins
-                    float margin = 50f; // 50px margin from edges
+                    float margin = 0;
+                    float clampedX = targetX;
+                    float clampedY = targetY;
 
-                    // Left bound
                     if (visualLeft < -margin) {
-                        newX = -margin - xOffset;
+                        clampedX = -margin - xOffset;
                     }
 
-                    // Right bound
                     if (visualRight > screenWidth + margin) {
-                        newX = screenWidth + margin - xOffset - visualWidth;
+                        clampedX = screenWidth + margin - xOffset - visualWidth;
                     }
 
-                    // Top bound
                     if (visualTop < -margin) {
-                        newY = -margin - yOffset;
+                        clampedY = -margin - yOffset;
                     }
 
-                    // IMPORTANT: Fix the docking threshold - make it much more restrictive
-                    // Only dock if keyboard is dragged very close to the bottom
-                    float dockingThreshold = screenHeight - 80; // Only dock when within 80px of bottom
-                    if (visualBottom > dockingThreshold) {
+                    if (clampedX != targetX || clampedY != targetY) {
+                        initialTouchX = clampedX - event.getRawX();
+                        initialTouchY = clampedY - event.getRawY();
+                    }
+
+                    float dockingThreshold = screenHeight - 50;
+                    float clampedVisualBottom = clampedY + yOffset + visualHeight;
+                    if (clampedVisualBottom > dockingThreshold) {
                         Log.d("softkeyboard", "DOCKING: Threshold reached, docking keyboard");
                         kFrame.setAlpha(1.0f);
                         isFloatingMode = false;
@@ -453,8 +494,11 @@ public class SoftKeyboard extends InputMethodService
                         return true;
                     }
 
-                    // Apply the new position
-                    kFrame.animate().x(newX).y(newY).setDuration(0).start();
+                    kFrame.animate().x(clampedX).y(clampedY).setDuration(0).start();
+
+                    // MODIFICATION: Update resize button positions during drag
+                    positionResizeButtons();
+
                     return true;
 
                 case MotionEvent.ACTION_UP:
@@ -463,55 +507,75 @@ public class SoftKeyboard extends InputMethodService
                     savedFloatX = kFrame.getX();
                     savedFloatY = kFrame.getY();
 
-                    // Hide resize buttons after a delay
-                    hideResizeButtonsDelayed();
+                    if (!isResizeInProgress) {
+                        hideResizeButtonsDelayed();
+                    }
                     return true;
             }
             return false;
         });
     }
+
     private void setupResizeButtons() {
         if (kTLBtn == null || kTRBtn == null || kBLBtn == null || kBRBtn == null) return;
 
-        // Bottom right corner (kBRBtn) - Main resize handle
+        // Bottom right corner (kBRBtn) - Main resize handle (radial resize)
         kBRBtn.setOnTouchListener(new View.OnTouchListener() {
             float centerX, centerY, startR, startScale, startX, startY;
 
             @Override
             public boolean onTouch(View v, MotionEvent e) {
                 if (e.getAction() == MotionEvent.ACTION_DOWN) {
+                    isResizeInProgress = true;
+                    cancelDelayedHide();
+
+                    // Add visual feedback - reduce opacity during resize
+                    kFrame.setAlpha(0.7f);
+
+                    Log.d("Resize", "BR - Resize operation started");
+
                     centerX = kFrame.getWidth() / 2f;
                     centerY = kFrame.getHeight() / 2f;
                     startX = kFrame.getX() + centerX;
                     startY = kFrame.getY() + centerY;
                     startR = (float) Math.hypot(e.getRawX() - startX, e.getRawY() - startY);
                     startScale = kFrame.getScaleX();
+                    return true;
 
                 } else if (e.getAction() == MotionEvent.ACTION_MOVE) {
                     float newR = (float) Math.hypot(e.getRawX() - startX, e.getRawY() - startY);
                     float newScale = (newR / startR) * startScale;
 
-                    // Apply proper scale limits with screen bounds consideration
                     newScale = applyScaleBounds(newScale);
 
-                    // Ensure keyboard doesn't exceed screen bounds after scaling
                     if (isScaleWithinScreenBounds(newScale)) {
-                        // Calculate offsets for scaling from center
                         temp1 = (kFrame.getWidth() - kFrame.getWidth() * newScale) / 2;
                         temp2 = (kFrame.getHeight() - kFrame.getHeight() * newScale) / 2;
 
-                        // Apply scaling
                         kFrame.animate().scaleX(newScale).scaleY(newScale).setDuration(0).start();
+                        positionResizeButtons();
 
-                        Log.d("Resize", "New scale: " + newScale);
+                        Log.d("Resize", "BR - New scale: " + newScale);
                     }
+                    return true;
+
+                } else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
+                    isResizeInProgress = false;
+                    savedFloatScale = kFrame.getScaleX();
+
+                    // Restore full opacity after resize
+                    kFrame.setAlpha(1.0f);
+
+                    Log.d("Resize", "BR - Resize operation ended, scale saved: " + savedFloatScale);
+
+                    hideResizeButtonsDelayed();
+                    return true;
                 }
-                return true;
+                return false;
             }
         });
 
-        // Similar updates for other resize buttons...
-        // Top left corner (kTLBtn)
+        // Top left corner (kTLBtn) - Vertical resize (up/down motion)
         kTLBtn.setOnTouchListener(new View.OnTouchListener() {
             float startScale, initialTouchY;
 
@@ -519,42 +583,14 @@ public class SoftKeyboard extends InputMethodService
             public boolean onTouch(View v, MotionEvent e) {
                 switch (e.getAction()) {
                     case MotionEvent.ACTION_DOWN:
-                        startScale = kFrame.getScaleX();
-                        initialTouchY = e.getRawY();
-                        return true;
+                        isResizeInProgress = true;
+                        cancelDelayedHide();
 
-                    case MotionEvent.ACTION_MOVE:
-                        float deltaY = initialTouchY - e.getRawY();
-                        DisplayMetrics metrics = getResources().getDisplayMetrics();
-                        float centerY = metrics.heightPixels / 2f;
+                        // Add visual feedback
+                        kFrame.setAlpha(0.7f);
 
-                        // Reduced sensitivity for more controlled scaling
-                        float scaleFactor = 1.0f + (deltaY / centerY) * 0.5f; // Reduced from 0.8f
-                        float newScale = startScale * scaleFactor;
+                        Log.d("Resize", "TL - Resize operation started");
 
-                        // Apply bounds
-                        newScale = applyScaleBounds(newScale);
-
-                        if (isScaleWithinScreenBounds(newScale)) {
-                            temp1 = (kFrame.getWidth() - kFrame.getWidth() * newScale) / 2;
-                            temp2 = (kFrame.getHeight() - kFrame.getHeight() * newScale) / 2;
-
-                            kFrame.animate().scaleX(newScale).scaleY(newScale).setDuration(0).start();
-                        }
-                        return true;
-                }
-                return false;
-            }
-        });
-
-        // Top right corner (kTRBtn) - same as top left
-        kTRBtn.setOnTouchListener(new View.OnTouchListener() {
-            float startScale, initialTouchY;
-
-            @Override
-            public boolean onTouch(View v, MotionEvent e) {
-                switch (e.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
                         startScale = kFrame.getScaleX();
                         initialTouchY = e.getRawY();
                         return true;
@@ -574,26 +610,109 @@ public class SoftKeyboard extends InputMethodService
                             temp2 = (kFrame.getHeight() - kFrame.getHeight() * newScale) / 2;
 
                             kFrame.animate().scaleX(newScale).scaleY(newScale).setDuration(0).start();
+                            positionResizeButtons();
+
+                            Log.d("Resize", "TL - New scale: " + newScale);
                         }
+                        return true;
+
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        isResizeInProgress = false;
+                        savedFloatScale = kFrame.getScaleX();
+
+                        // Restore full opacity
+                        kFrame.setAlpha(1.0f);
+
+                        Log.d("Resize", "TL - Resize operation ended, scale saved: " + savedFloatScale);
+
+                        hideResizeButtonsDelayed();
                         return true;
                 }
                 return false;
             }
         });
 
-        // Bottom left corner (kBLBtn) - same as bottom right
+        // Top right corner (kTRBtn) - Vertical resize (same as top left)
+        kTRBtn.setOnTouchListener(new View.OnTouchListener() {
+            float startScale, initialTouchY;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent e) {
+                switch (e.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        isResizeInProgress = true;
+                        cancelDelayedHide();
+
+                        // Add visual feedback
+                        kFrame.setAlpha(0.7f);
+
+                        Log.d("Resize", "TR - Resize operation started");
+
+                        startScale = kFrame.getScaleX();
+                        initialTouchY = e.getRawY();
+                        return true;
+
+                    case MotionEvent.ACTION_MOVE:
+                        float deltaY = initialTouchY - e.getRawY();
+                        DisplayMetrics metrics = getResources().getDisplayMetrics();
+                        float centerY = metrics.heightPixels / 2f;
+
+                        float scaleFactor = 1.0f + (deltaY / centerY) * 0.5f;
+                        float newScale = startScale * scaleFactor;
+
+                        newScale = applyScaleBounds(newScale);
+
+                        if (isScaleWithinScreenBounds(newScale)) {
+                            temp1 = (kFrame.getWidth() - kFrame.getWidth() * newScale) / 2;
+                            temp2 = (kFrame.getHeight() - kFrame.getHeight() * newScale) / 2;
+
+                            kFrame.animate().scaleX(newScale).scaleY(newScale).setDuration(0).start();
+                            positionResizeButtons();
+
+                            Log.d("Resize", "TR - New scale: " + newScale);
+                        }
+                        return true;
+
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        isResizeInProgress = false;
+                        savedFloatScale = kFrame.getScaleX();
+
+                        // Restore full opacity
+                        kFrame.setAlpha(1.0f);
+
+                        Log.d("Resize", "TR - Resize operation ended, scale saved: " + savedFloatScale);
+
+                        hideResizeButtonsDelayed();
+                        return true;
+                }
+                return false;
+            }
+        });
+
+        // Bottom left corner (kBLBtn) - Radial resize (same as bottom right)
         kBLBtn.setOnTouchListener(new View.OnTouchListener() {
             float centerX, centerY, startR, startScale, startX, startY;
 
             @Override
             public boolean onTouch(View v, MotionEvent e) {
                 if (e.getAction() == MotionEvent.ACTION_DOWN) {
+                    isResizeInProgress = true;
+                    cancelDelayedHide();
+
+                    // Add visual feedback
+                    kFrame.setAlpha(0.7f);
+
+                    Log.d("Resize", "BL - Resize operation started");
+
                     centerX = kFrame.getWidth() / 2f;
                     centerY = kFrame.getHeight() / 2f;
                     startX = kFrame.getX() + centerX;
                     startY = kFrame.getY() + centerY;
                     startR = (float) Math.hypot(e.getRawX() - startX, e.getRawY() - startY);
                     startScale = kFrame.getScaleX();
+                    return true;
 
                 } else if (e.getAction() == MotionEvent.ACTION_MOVE) {
                     float newR = (float) Math.hypot(e.getRawX() - startX, e.getRawY() - startY);
@@ -604,13 +723,28 @@ public class SoftKeyboard extends InputMethodService
                     if (isScaleWithinScreenBounds(newScale)) {
                         temp1 = (kFrame.getWidth() - kFrame.getWidth() * newScale) / 2;
                         temp2 = (kFrame.getHeight() - kFrame.getHeight() * newScale) / 2;
-
                         kFrame.animate().scaleX(newScale).scaleY(newScale).setDuration(0).start();
+                        positionResizeButtons();
                     }
+                    return true;
+
+                } else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
+                    isResizeInProgress = false;
+                    savedFloatScale = kFrame.getScaleX();
+
+                    // Restore full opacity
+                    kFrame.setAlpha(1.0f);
+
+                    Log.d("Resize", "BL - Resize operation ended, scale saved: " + savedFloatScale);
+
+                    hideResizeButtonsDelayed();
+                    return true;
                 }
-                return true;
+                return false;
             }
         });
+
+        Log.d("softkeyboard", "All resize buttons setup completed with L-shaped handles and visual feedback");
     }
 
     // Add these helper methods for proper bounds checking
@@ -655,11 +789,11 @@ public class SoftKeyboard extends InputMethodService
         float bottom = currentY + yOffset + scaledHeight;
 
         // Check if keyboard would fit within screen bounds with margin
-        float margin = 20f;
+        float margin = 0;
         boolean fitsHorizontally = (left >= -margin) && (right <= screenWidth + margin);
         boolean fitsVertically = (top >= -margin) && (bottom <= screenHeight - 100); // Extra bottom margin
 
-        return fitsHorizontally && fitsVertically;
+        return fitsHorizontally && fitsVertically && (scale >= MIN_SCALE) && (scale <= MAX_SCALE);
     }
 
     private void showResizeButtons() {
@@ -667,6 +801,27 @@ public class SoftKeyboard extends InputMethodService
         if (kTRBtn != null) kTRBtn.setVisibility(View.VISIBLE);
         if (kBLBtn != null) kBLBtn.setVisibility(View.VISIBLE);
         if (kBRBtn != null) kBRBtn.setVisibility(View.VISIBLE);
+    }
+
+    @Override
+    public void showWindow(boolean showInput) {
+        try {
+            super.showWindow(showInput);
+            // When touch on any edit text corner resize button should appear for 4sec
+            if (isFloatingMode) {
+                if (kTLBtn != null) kTLBtn.setVisibility(View.VISIBLE);
+                if (kTRBtn != null) kTRBtn.setVisibility(View.VISIBLE);
+                if (kBLBtn != null) kBLBtn.setVisibility(View.VISIBLE);
+                if (kBRBtn != null) kBRBtn.setVisibility(View.VISIBLE);
+
+                // MODIFICATION: Only start delayed hide if no resize operation is active
+                if (!isResizeInProgress) {
+                    hideResizeButtonsDelayed();
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void hideResizeButtons() {
@@ -677,8 +832,35 @@ public class SoftKeyboard extends InputMethodService
     }
 
     private void hideResizeButtonsDelayed() {
-        android.os.Handler handler = new android.os.Handler();
-        handler.postDelayed(this::hideResizeButtons, 4000); // Hide after 4 seconds
+        // Cancel any existing delayed hide operation
+        if (hideResizeButtonsRunnable != null) {
+            resizeButtonHandler.removeCallbacks(hideResizeButtonsRunnable);
+        }
+
+        hideResizeButtonsRunnable = new Runnable() {
+            @Override
+            public void run() {
+                // Only hide if no resize operation is in progress
+                if (!isResizeInProgress) {
+                    hideResizeButtons();
+                    Log.d("softkeyboard", "Resize buttons hidden after delay");
+                } else {
+                    // If resize is in progress, schedule another check
+                    Log.d("softkeyboard", "Resize in progress, delaying hide operation");
+                    hideResizeButtonsDelayed();
+                }
+            }
+        };
+
+        resizeButtonHandler.postDelayed(hideResizeButtonsRunnable, 4000); // Hide after 4 seconds
+    }
+
+    private void cancelDelayedHide() {
+        if (hideResizeButtonsRunnable != null) {
+            resizeButtonHandler.removeCallbacks(hideResizeButtonsRunnable);
+            hideResizeButtonsRunnable = null;
+            Log.d("softkeyboard", "Delayed hide operation cancelled");
+        }
     }
     @Override
     public boolean onEvaluateInputViewShown() {
@@ -698,31 +880,26 @@ public class SoftKeyboard extends InputMethodService
 
             final int inputHeight = mInputView.getHeight();
 
-            // DYNAMIC: Use actual screen height instead of hardcoded 1359
             DisplayMetrics metrics = getResources().getDisplayMetrics();
-            // DYNAMIC: Use parent container height instead of hardcoded 1359
             int containerHeight = 0;
             if (parentContainer != null) {
                 containerHeight = parentContainer.getHeight();
                 Log.d("softkeyboard", "Parent container height: " + containerHeight);
             } else {
-                // Fallback to inputHeight if container not available
                 containerHeight = inputHeight;
                 Log.w("softkeyboard", "Parent container null, using inputHeight as fallback: " + containerHeight);
             }
 
-            int dynamicOffset = containerHeight; // Use container height as offset
+            int dynamicOffset = containerHeight;
 
             Log.d("softkeyboard", "Using container height as dynamic offset: " + dynamicOffset);
 
-            // INDUSTRY STANDARD with DYNAMIC OFFSET: Use container height to completely eliminate bottom keyboard presence
-            outInsets.contentTopInsets = inputHeight + dynamicOffset;  // Now container-specific
-            outInsets.visibleTopInsets = inputHeight + dynamicOffset;  // Same dynamic offset for both
+            outInsets.contentTopInsets = inputHeight + dynamicOffset;
+            outInsets.visibleTopInsets = inputHeight + dynamicOffset;
 
-            // Use TOUCHABLE_INSETS_REGION so system knows we're only touchable in floating area
             outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION;
 
-            // Calculate actual floating keyboard bounds
+            // Actual floating keyboard bounds
             float kFrameX = kFrame.getX();
             float kFrameY = kFrame.getY();
             float scaleX = kFrame.getScaleX();
@@ -736,25 +913,29 @@ public class SoftKeyboard extends InputMethodService
             float xOffset = (kFrame.getWidth() - scaledWidth) / 2f;
             float yOffset = (kFrame.getHeight() - scaledHeight) / 2f;
 
-            // Calculate visual bounds
-            int left = Math.max(0, (int)(kFrameX + xOffset));
-            int top = Math.max(0, (int)(kFrameY + yOffset));
-            int right = (int)(kFrameX + xOffset + scaledWidth);
-            int bottom = (int)(kFrameY + yOffset + scaledHeight);
+            int resizeButtonSize = (int) (16 * getResources().getDisplayMetrics().density); // 16 dp in pixels
+            int resizeButtonPadding = (int) (2 * getResources().getDisplayMetrics().density); // padding
+            int extraSpace = resizeButtonSize + resizeButtonPadding;
+
+            // Calculate visual bounds with extra space for resize buttons
+            int left = Math.max(0, (int)(kFrameX + xOffset - extraSpace));
+            int top = Math.max(0, (int)(kFrameY + yOffset - extraSpace));
+            int right = (int)(kFrameX + xOffset + scaledWidth + extraSpace);
+            int bottom = (int)(kFrameY + yOffset + scaledHeight + extraSpace);
 
             // Validate bounds against screen
             metrics = getResources().getDisplayMetrics();
             right = Math.min(right, metrics.widthPixels);
             bottom = Math.min(bottom, metrics.heightPixels);
 
-            // Set touchable region to ONLY the floating keyboard
+            // Set touchable region to include the floating keyboard + resize button space
             android.graphics.Region region = new android.graphics.Region();
             region.set(left, top, right, bottom);
             outInsets.touchableRegion.set(region);
 
-            Log.d("softkeyboard", "INDUSTRY STANDARD Floating insets - contentTop: " + outInsets.contentTopInsets +
+            Log.d("softkeyboard", "FLOATING insets with resize buttons - contentTop: " + outInsets.contentTopInsets +
                     ", visibleTop: " + outInsets.visibleTopInsets);
-            Log.d("softkeyboard", "Touchable region: " + left + "," + top + "," + right + "," + bottom);
+            Log.d("softkeyboard", "Touchable region (with resize buttons): " + left + "," + top + "," + right + "," + bottom);
 
         } else {
             // NORMAL MODE - Standard IME behavior
@@ -1889,6 +2070,8 @@ public class SoftKeyboard extends InputMethodService
 
     @Override
     public void onDestroy() {
+        cancelDelayedHide();
+
         hideOverlay();
         super.onDestroy();
     }
