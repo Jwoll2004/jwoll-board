@@ -910,7 +910,7 @@ public class SoftKeyboard extends InputMethodService
             float yOffset = (kFrame.getHeight() - scaledHeight) / 2f;
 
             int resizeButtonSize = (int) (16 * getResources().getDisplayMetrics().density); // 16 dp in pixels
-            int resizeButtonPadding = (int) (4 * getResources().getDisplayMetrics().density); // padding
+            int resizeButtonPadding = (int) (6 * getResources().getDisplayMetrics().density); // padding
             int extraSpace = resizeButtonSize + resizeButtonPadding;
 
             // Calculate visual bounds with extra space for resize buttons
