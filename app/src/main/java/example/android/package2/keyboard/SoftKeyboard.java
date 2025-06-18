@@ -575,117 +575,113 @@ public class SoftKeyboard extends InputMethodService
             }
         });
 
-        // Top left corner (kTLBtn) - Vertical resize (up/down motion)
+        // Top left corner (kTLBtn) - Radial resize (same as bottom buttons)
         kTLBtn.setOnTouchListener(new View.OnTouchListener() {
-            float startScale, initialTouchY;
+            float centerX, centerY, startR, startScale, startX, startY;
 
             @Override
             public boolean onTouch(View v, MotionEvent e) {
-                switch (e.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        isResizeInProgress = true;
-                        cancelDelayedHide();
+                if (e.getAction() == MotionEvent.ACTION_DOWN) {
+                    isResizeInProgress = true;
+                    cancelDelayedHide();
 
-                        // Add visual feedback
-                        kFrame.setAlpha(0.7f);
+                    // Add visual feedback
+                    kFrame.setAlpha(0.7f);
 
-                        Log.d("Resize", "TL - Resize operation started");
+                    Log.d("Resize", "TL - Resize operation started");
 
-                        startScale = kFrame.getScaleX();
-                        initialTouchY = e.getRawY();
-                        return true;
+                    centerX = kFrame.getWidth() / 2f;
+                    centerY = kFrame.getHeight() / 2f;
+                    startX = kFrame.getX() + centerX;
+                    startY = kFrame.getY() + centerY;
+                    startR = (float) Math.hypot(e.getRawX() - startX, e.getRawY() - startY);
+                    startScale = kFrame.getScaleX();
+                    return true;
 
-                    case MotionEvent.ACTION_MOVE:
-                        float deltaY = initialTouchY - e.getRawY();
-                        DisplayMetrics metrics = getResources().getDisplayMetrics();
-                        float centerY = metrics.heightPixels / 2f;
+                } else if (e.getAction() == MotionEvent.ACTION_MOVE) {
+                    float newR = (float) Math.hypot(e.getRawX() - startX, e.getRawY() - startY);
+                    float newScale = (newR / startR) * startScale;
 
-                        float scaleFactor = 1.0f + (deltaY / centerY) * 0.5f;
-                        float newScale = startScale * scaleFactor;
+                    newScale = applyScaleBounds(newScale);
 
-                        newScale = applyScaleBounds(newScale);
+                    if (isScaleWithinScreenBounds(newScale)) {
+                        temp1 = (kFrame.getWidth() - kFrame.getWidth() * newScale) / 2;
+                        temp2 = (kFrame.getHeight() - kFrame.getHeight() * newScale) / 2;
 
-                        if (isScaleWithinScreenBounds(newScale)) {
-                            temp1 = (kFrame.getWidth() - kFrame.getWidth() * newScale) / 2;
-                            temp2 = (kFrame.getHeight() - kFrame.getHeight() * newScale) / 2;
+                        kFrame.animate().scaleX(newScale).scaleY(newScale).setDuration(0).start();
+                        positionResizeButtons();
 
-                            kFrame.animate().scaleX(newScale).scaleY(newScale).setDuration(0).start();
-                            positionResizeButtons();
+                        Log.d("Resize", "TL - New scale: " + newScale);
+                    }
+                    return true;
 
-                            Log.d("Resize", "TL - New scale: " + newScale);
-                        }
-                        return true;
+                } else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
+                    isResizeInProgress = false;
+                    savedFloatScale = kFrame.getScaleX();
 
-                    case MotionEvent.ACTION_UP:
-                    case MotionEvent.ACTION_CANCEL:
-                        isResizeInProgress = false;
-                        savedFloatScale = kFrame.getScaleX();
+                    // Restore full opacity
+                    kFrame.setAlpha(1.0f);
 
-                        // Restore full opacity
-                        kFrame.setAlpha(1.0f);
+                    Log.d("Resize", "TL - Resize operation ended, scale saved: " + savedFloatScale);
 
-                        Log.d("Resize", "TL - Resize operation ended, scale saved: " + savedFloatScale);
-
-                        hideResizeButtonsDelayed();
-                        return true;
+                    hideResizeButtonsDelayed();
+                    return true;
                 }
                 return false;
             }
         });
 
-        // Top right corner (kTRBtn) - Vertical resize (same as top left)
+        // Top right corner (kTRBtn) - Radial resize (same as bottom buttons)
         kTRBtn.setOnTouchListener(new View.OnTouchListener() {
-            float startScale, initialTouchY;
+            float centerX, centerY, startR, startScale, startX, startY;
 
             @Override
             public boolean onTouch(View v, MotionEvent e) {
-                switch (e.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        isResizeInProgress = true;
-                        cancelDelayedHide();
+                if (e.getAction() == MotionEvent.ACTION_DOWN) {
+                    isResizeInProgress = true;
+                    cancelDelayedHide();
 
-                        // Add visual feedback
-                        kFrame.setAlpha(0.7f);
+                    // Add visual feedback
+                    kFrame.setAlpha(0.7f);
 
-                        Log.d("Resize", "TR - Resize operation started");
+                    Log.d("Resize", "TR - Resize operation started");
 
-                        startScale = kFrame.getScaleX();
-                        initialTouchY = e.getRawY();
-                        return true;
+                    centerX = kFrame.getWidth() / 2f;
+                    centerY = kFrame.getHeight() / 2f;
+                    startX = kFrame.getX() + centerX;
+                    startY = kFrame.getY() + centerY;
+                    startR = (float) Math.hypot(e.getRawX() - startX, e.getRawY() - startY);
+                    startScale = kFrame.getScaleX();
+                    return true;
 
-                    case MotionEvent.ACTION_MOVE:
-                        float deltaY = initialTouchY - e.getRawY();
-                        DisplayMetrics metrics = getResources().getDisplayMetrics();
-                        float centerY = metrics.heightPixels / 2f;
+                } else if (e.getAction() == MotionEvent.ACTION_MOVE) {
+                    float newR = (float) Math.hypot(e.getRawX() - startX, e.getRawY() - startY);
+                    float newScale = (newR / startR) * startScale;
 
-                        float scaleFactor = 1.0f + (deltaY / centerY) * 0.5f;
-                        float newScale = startScale * scaleFactor;
+                    newScale = applyScaleBounds(newScale);
 
-                        newScale = applyScaleBounds(newScale);
+                    if (isScaleWithinScreenBounds(newScale)) {
+                        temp1 = (kFrame.getWidth() - kFrame.getWidth() * newScale) / 2;
+                        temp2 = (kFrame.getHeight() - kFrame.getHeight() * newScale) / 2;
 
-                        if (isScaleWithinScreenBounds(newScale)) {
-                            temp1 = (kFrame.getWidth() - kFrame.getWidth() * newScale) / 2;
-                            temp2 = (kFrame.getHeight() - kFrame.getHeight() * newScale) / 2;
+                        kFrame.animate().scaleX(newScale).scaleY(newScale).setDuration(0).start();
+                        positionResizeButtons();
 
-                            kFrame.animate().scaleX(newScale).scaleY(newScale).setDuration(0).start();
-                            positionResizeButtons();
+                        Log.d("Resize", "TR - New scale: " + newScale);
+                    }
+                    return true;
 
-                            Log.d("Resize", "TR - New scale: " + newScale);
-                        }
-                        return true;
+                } else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
+                    isResizeInProgress = false;
+                    savedFloatScale = kFrame.getScaleX();
 
-                    case MotionEvent.ACTION_UP:
-                    case MotionEvent.ACTION_CANCEL:
-                        isResizeInProgress = false;
-                        savedFloatScale = kFrame.getScaleX();
+                    // Restore full opacity
+                    kFrame.setAlpha(1.0f);
 
-                        // Restore full opacity
-                        kFrame.setAlpha(1.0f);
+                    Log.d("Resize", "TR - Resize operation ended, scale saved: " + savedFloatScale);
 
-                        Log.d("Resize", "TR - Resize operation ended, scale saved: " + savedFloatScale);
-
-                        hideResizeButtonsDelayed();
-                        return true;
+                    hideResizeButtonsDelayed();
+                    return true;
                 }
                 return false;
             }
@@ -914,7 +910,7 @@ public class SoftKeyboard extends InputMethodService
             float yOffset = (kFrame.getHeight() - scaledHeight) / 2f;
 
             int resizeButtonSize = (int) (16 * getResources().getDisplayMetrics().density); // 16 dp in pixels
-            int resizeButtonPadding = (int) (2 * getResources().getDisplayMetrics().density); // padding
+            int resizeButtonPadding = (int) (4 * getResources().getDisplayMetrics().density); // padding
             int extraSpace = resizeButtonSize + resizeButtonPadding;
 
             // Calculate visual bounds with extra space for resize buttons
