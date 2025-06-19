@@ -1,4 +1,4 @@
-package example.android.package2.keyboard
+package example.android.package2.suggestion
 
 import android.inputmethodservice.InputMethodService
 import android.util.Log

@@ -27,8 +27,9 @@ import android.widget.Button;
 import example.android.package2.emoji.manager.EmojiManager;
 import example.android.package2.emoji.extensions.SoftKeyboardEmojiExtensionKt;
 import example.android.package2.sharing.extensions.SoftKeyboardSharingExtensionKt;
+import example.android.package2.suggestion.SuggestionManager;
+
 import androidx.annotation.NonNull;
-import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.aosp_poc.R;
 import android.util.Log;
