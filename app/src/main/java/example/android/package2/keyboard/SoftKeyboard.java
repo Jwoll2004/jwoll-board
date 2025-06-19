@@ -27,7 +27,7 @@ import android.widget.Button;
 import example.android.package2.emoji.manager.EmojiManager;
 import example.android.package2.emoji.extensions.SoftKeyboardEmojiExtensionKt;
 import example.android.package2.sharing.extensions.SoftKeyboardSharingExtensionKt;
-import example.android.package2.suggestion.SuggestionManager;
+import example.android.package2.suggestion.AutofillManager;
 
 import androidx.annotation.NonNull;
 
@@ -104,13 +104,37 @@ public class SoftKeyboard extends InputMethodService
     private android.os.Handler resizeButtonHandler = new android.os.Handler();
     private Runnable hideResizeButtonsRunnable = null;
 
-    private SuggestionManager suggestionManager;
+    private AutofillManager autofillManager;
+    private EditorInfo pendingEditorInfo = null;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        logMethodCall("onCreate");
+
         mInputMethodManager = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         mWordSeparators = getResources().getString(R.string.word_separators);
+
+        Log.d("SuggestionDebug", "SoftKeyboard: onCreate() completed");
+    }
+    private void debugAutofillState(String context) {
+        Log.d("SuggestionDebug", "=== AUTOFILL DEBUG: " + context + " ===");
+        Log.d("SuggestionDebug", "autofillManager: " + (autofillManager != null ? "INITIALIZED" : "NULL"));
+        EditorInfo ei = getCurrentInputEditorInfo();
+        if (ei != null) {
+            Log.d("SuggestionDebug", "Current EditorInfo - package: " + ei.packageName + ", fieldId: " + ei.fieldId);
+            Log.d("SuggestionDebug", "Current EditorInfo - hint: " + ei.hintText + ", inputType: 0x" + Integer.toHexString(ei.inputType));
+        } else {
+            Log.d("SuggestionDebug", "Current EditorInfo: NULL");
+        }
+        Log.d("SuggestionDebug", "========================");
+    }
+
+
+    private void logMethodCall(String methodName) {
+        Log.d("SuggestionDebug", "=== SoftKeyboard." + methodName + " called ===");
+        Log.d("SuggestionDebug", "autofillManager state: " + (autofillManager != null ? "INITIALIZED" : "NULL"));
+        Log.d("SuggestionDebug", "pendingEditorInfo: " + (pendingEditorInfo != null ? "PENDING" : "null"));
     }
     @NonNull
     Context getDisplayContext() {
@@ -144,6 +168,7 @@ public class SoftKeyboard extends InputMethodService
     }
     @Override
     public View onCreateInputView() {
+        logMethodCall("onCreateInputView");
         View normalLayout = getLayoutInflater().inflate(R.layout.normal_keyboard_layout_with_emoji, null);
 
         // Initialize views
@@ -174,22 +199,27 @@ public class SoftKeyboard extends InputMethodService
         normalEmojiManager = SoftKeyboardEmojiExtensionKt.setupEmojiSupport(this, normalLayout);
         setupSharingButtons(normalLayout);
 
-        suggestionManager = new SuggestionManager(this, normalLayout);
+        debugAutofillState("onCreateInputView - after autofill init");
+        autofillManager = new AutofillManager(this, normalLayout);
+        Log.d("SuggestionDebug", "SoftKeyboard: autofillManager initialized in onCreateInputView");
+
+        // IMPORTANT: Process any pending field focus that happened before autofill was ready
+        if (pendingEditorInfo != null) {
+            Log.d("SuggestionDebug", "SoftKeyboard: Processing pending EditorInfo from onStartInput");
+            autofillManager.onFieldFocused(pendingEditorInfo);
+            pendingEditorInfo = null; // Clear after processing
+        }
 
         updateEmojiRowVisibility();
 
-        Log.d("softkeyboard", "onCreateInputView completed:");
-        Log.d("softkeyboard", "  normalLayout: " + (normalLayout != null));
-        Log.d("softkeyboard", "  parentContainer: " + (parentContainer != null));
-        Log.d("softkeyboard", "  kFrame: " + (kFrame != null));
-        Log.d("softkeyboard", "  mInputView: " + (mInputView != null));
-        Log.d("softkeyboard", "  kNavBar: " + (kNavBar != null));
 
+        Log.d("softkeyboard", "onCreateInputView completed:");
         return normalLayout;
 
     }
     @Override
     public void onStartInput(EditorInfo attribute, boolean restarting) {
+        logMethodCall("onStartInput");
         super.onStartInput(attribute, restarting);
 
         mComposing.setLength(0);
@@ -204,6 +234,20 @@ public class SoftKeyboard extends InputMethodService
 
         isChatTextBox = detectChatTextBox(attribute);
         updateEmojiRowVisibility();
+
+        debugAutofillState("onStartInput - start");
+
+        // IMPORTANT: Store the EditorInfo for when autofillManager becomes available
+        pendingEditorInfo = attribute;
+
+        // Try to notify autofill if available, otherwise it will be handled when view is created
+        if (autofillManager != null) {
+            Log.d("SuggestionDebug", "SoftKeyboard: onStartInput - autofill available, notifying immediately");
+            autofillManager.onFieldFocused(attribute);
+            pendingEditorInfo = null; // Clear since we processed it
+        } else {
+            Log.d("SuggestionDebug", "SoftKeyboard: onStartInput - autofill not ready, storing EditorInfo for later");
+        }
 
         // Ensure keyboards are initialized
         if (!mKeyboardsInitialized || mQwertyKeyboard == null) {
@@ -254,6 +298,7 @@ public class SoftKeyboard extends InputMethodService
     }
     @Override
     public void onStartInputView(EditorInfo attribute, boolean restarting) {
+        logMethodCall("onStartInputView");
         super.onStartInputView(attribute, restarting);
 
         setLatinKeyboard(mCurKeyboard);
@@ -266,6 +311,13 @@ public class SoftKeyboard extends InputMethodService
         }
 
         updateEmojiRowVisibility();
+        if (autofillManager != null) {
+            Log.d("SuggestionDebug", "SoftKeyboard: onStartInputView - ensuring autofill notification");
+            autofillManager.onFieldFocused(getCurrentInputEditorInfo());
+
+            // Also clear any pending EditorInfo since we're now active
+            pendingEditorInfo = null;
+        }
     }
     @Override
     public void onComputeInsets(InputMethodService.Insets outInsets) {
@@ -1545,17 +1597,19 @@ public class SoftKeyboard extends InputMethodService
             sendKey(primaryCode);
             updateShiftKeyState(getCurrentInputEditorInfo());
 
-            // Special handling for space - check the word that was just completed
+            // Keep only emoji notification for chat functionality
             if (primaryCode == ' ') {
                 String lastWord = getLastWordFromCommittedText();
-                Log.d("EmojiDebug", "Space pressed, last word: '" + lastWord + "'");
                 notifyEmojiManagersWordCompletion(lastWord);
             } else {
-                // For other separators, use the general word change notification
                 notifyEmojiManagersWordChange();
             }
-            return;
 
+            // ADD THIS: Notify autofill after separator input
+            if (autofillManager != null) {
+                autofillManager.onFieldChanged();
+            }
+            return;
         }
 
         // Process the key normally
@@ -1589,7 +1643,6 @@ public class SoftKeyboard extends InputMethodService
                 Log.d("softkeyboard", "Processing mode change");
                 handleModeChange();
                 break;
-
 
             case '\n':
                 Log.d("softkeyboard", "Processing enter/return");
@@ -1638,6 +1691,11 @@ public class SoftKeyboard extends InputMethodService
                     Log.w("softkeyboard", "Unhandled primaryCode: " + primaryCode);
                 }
                 break;
+        }
+
+        // ADD THIS: Notify autofill after any key processing (except SHIFT which returns early)
+        if (autofillManager != null) {
+            autofillManager.onFieldChanged();
         }
     }
     private void sendKey(int keyCode) {
@@ -1878,8 +1936,16 @@ public class SoftKeyboard extends InputMethodService
                 break;
 
             case KeyEvent.KEYCODE_ENTER:
-                // Let the underlying text editor always handle these.
-                return false;
+                if (autofillManager != null) {
+                    autofillManager.onKeyboardHidden(); // Save current field
+                }
+                return super.onKeyDown(keyCode, event);
+
+            case KeyEvent.KEYCODE_TAB:
+                if (autofillManager != null) {
+                    autofillManager.onKeyboardHidden();
+                }
+                return super.onKeyDown(keyCode, event);
 
             default:
                 // For all other keys, if we want to do transformations on
@@ -2054,6 +2120,11 @@ public class SoftKeyboard extends InputMethodService
 
     @Override
     public void onFinishInput() {
+        // Save current field data BEFORE clearing everything
+        if (autofillManager != null) {
+            autofillManager.onKeyboardHidden();
+        }
+
         super.onFinishInput();
         mComposing.setLength(0);
         setCandidatesViewShown(false);
@@ -2061,6 +2132,15 @@ public class SoftKeyboard extends InputMethodService
         if (mInputView != null) {
             mInputView.closing();
         }
+    }
+
+    @Override
+    public void onFinishInputView(boolean finishingInput) {
+        if (autofillManager != null) {
+            autofillManager.onKeyboardHidden();
+        }
+
+        super.onFinishInputView(finishingInput);
     }
 
     @Override

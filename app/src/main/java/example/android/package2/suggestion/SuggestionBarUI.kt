@@ -11,28 +11,22 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.aosp_poc.R
 
 /**
- * Universal Suggestion System Manager
- *
- * Sections:
- * - Initialize suggestion views
- * - Handle suggestion data & display
- * - Process user interactions
- * - Future: Core autofill logic integration
+ * Enhanced suggestion display and interaction handling
  */
-class SuggestionManager(
+class SuggestionBarUI(
     private val inputMethodService: InputMethodService,
     private val rootView: View
 ) {
-    // ============================================
-    // Initialize suggestion views
 
     private var suggestionBar: RecyclerView? = null
     private var suggestionAdapter: SuggestionAdapter? = null
 
     init {
         setupSuggestionBar()
-        setupDummyData()
     }
+
+    // ============================================
+    // Suggestion Bar Setup
 
     private fun setupSuggestionBar() {
         suggestionBar = rootView.findViewById(R.id.suggestion_bar)
@@ -48,47 +42,60 @@ class SuggestionManager(
                 false
             )
 
+            // Start hidden
+            bar.visibility = View.GONE
+
             Log.d("SuggestionManager", "Suggestion bar setup completed")
         }
     }
 
     // ============================================
-    // Handle suggestion data & display
-
-    private fun setupDummyData() {
-        val dummySuggestions = listOf(
-            "John Doe",
-            "john.doe@gmail.com",
-            "555-0123"
-        )
-        updateSuggestions(dummySuggestions)
-    }
+    // Public Interface
 
     fun updateSuggestions(suggestions: List<String>) {
         suggestionAdapter?.updateSuggestions(suggestions)
+        Log.d("SuggestionDebug", "SuggestionBarUI: Updated suggestions: ${suggestions.size} items")
     }
 
     fun showSuggestionBar() {
         suggestionBar?.visibility = View.VISIBLE
+        Log.d("SuggestionDebug", "SuggestionBarUI: Suggestion bar shown")
     }
 
     fun hideSuggestionBar() {
         suggestionBar?.visibility = View.GONE
+        Log.d("SuggestionDebug", "SuggestionBarUI: Suggestion bar hidden")
     }
 
     // ============================================
-    // Process user interactions
+    // User Interaction
 
     private fun onSuggestionClicked(suggestion: String) {
         val inputConnection: InputConnection? = inputMethodService.currentInputConnection
         inputConnection?.let { ic ->
+            ic.beginBatchEdit()
+
+            // Get all text in the field
+            val textBefore = ic.getTextBeforeCursor(1000, 0) ?: ""
+            val textAfter = ic.getTextAfterCursor(1000, 0) ?: ""
+
+            // Clear entire field content
+            ic.deleteSurroundingText(textBefore.length, textAfter.length)
+
+            // Insert the suggestion
             ic.commitText(suggestion, 1)
-            Log.d("SuggestionManager", "Suggestion selected: $suggestion")
+
+            ic.endBatchEdit()
+
+            // Hide suggestions after selection
+            hideSuggestionBar()
+
+            Log.d("SuggestionBarUI", "Replaced field content with: '$suggestion'")
         }
     }
 
     // ============================================
-    // Internal RecyclerView Adapter
+    // Adapter Implementation
 
     private inner class SuggestionAdapter(
         private val onSuggestionClick: (String) -> Unit
@@ -100,7 +107,7 @@ class SuggestionManager(
             val textView = TextView(parent.context).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
+                    ViewGroup.LayoutParams.MATCH_PARENT
                 )
             }
             return SuggestionViewHolder(textView)
