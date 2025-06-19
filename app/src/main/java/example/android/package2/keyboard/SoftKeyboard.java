@@ -733,6 +733,7 @@ public class SoftKeyboard extends InputMethodService
     }
 
     // Resizing functions:
+    @SuppressLint("ClickableViewAccessibility")
     private void setupResizeButtons() {
         if (kTLBtn == null || kTRBtn == null || kBLBtn == null || kBRBtn == null) return;
 
