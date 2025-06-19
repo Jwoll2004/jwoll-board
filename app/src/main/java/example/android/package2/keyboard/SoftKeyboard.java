@@ -3,13 +3,9 @@ package example.android.package2.keyboard;
 import android.annotation.SuppressLint;
 import android.app.Dialog;
 import android.content.Context;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.Paint;
 import android.inputmethodservice.InputMethodService;
 import android.inputmethodservice.Keyboard;
 import android.inputmethodservice.KeyboardView;
-import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.text.InputType;
@@ -28,22 +24,17 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.InputMethodSubtype;
 import android.widget.Button;
-
 import example.android.package2.emoji.manager.EmojiManager;
 import example.android.package2.emoji.extensions.SoftKeyboardEmojiExtensionKt;
 import example.android.package2.sharing.extensions.SoftKeyboardSharingExtensionKt;
-
 import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.aosp_poc.R;
-
 import android.util.Log;
-import android.view.Gravity;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
-
-import java.io.File;
 
 public class SoftKeyboard extends InputMethodService
         implements KeyboardView.OnKeyboardActionListener {
@@ -111,6 +102,8 @@ public class SoftKeyboard extends InputMethodService
     private boolean isResizeInProgress = false;
     private android.os.Handler resizeButtonHandler = new android.os.Handler();
     private Runnable hideResizeButtonsRunnable = null;
+
+    private SuggestionManager suggestionManager;
 
     @Override
     public void onCreate() {
@@ -180,6 +173,8 @@ public class SoftKeyboard extends InputMethodService
         normalEmojiManager = SoftKeyboardEmojiExtensionKt.setupEmojiSupport(this, normalLayout);
         setupSharingButtons(normalLayout);
 
+        suggestionManager = new SuggestionManager(this, normalLayout);
+
         updateEmojiRowVisibility();
 
         Log.d("softkeyboard", "onCreateInputView completed:");
@@ -192,6 +187,226 @@ public class SoftKeyboard extends InputMethodService
         return normalLayout;
 
     }
+    @Override
+    public void onStartInput(EditorInfo attribute, boolean restarting) {
+        super.onStartInput(attribute, restarting);
+
+        mComposing.setLength(0);
+
+        if (!restarting) {
+            mMetaState = 0;
+        }
+
+        mPredictionOn = false;
+        mCompletionOn = false;
+        mCompletions = null;
+
+        isChatTextBox = detectChatTextBox(attribute);
+        updateEmojiRowVisibility();
+
+        // Ensure keyboards are initialized
+        if (!mKeyboardsInitialized || mQwertyKeyboard == null) {
+            onInitializeInterface();
+        }
+
+        // Determine keyboard type based on input type
+        switch (attribute.inputType & InputType.TYPE_MASK_CLASS) {
+            case InputType.TYPE_CLASS_NUMBER:
+            case InputType.TYPE_CLASS_DATETIME:
+                mCurKeyboard = mSymbolsKeyboard;
+                break;
+            case InputType.TYPE_CLASS_PHONE:
+                mCurKeyboard = mSymbolsKeyboard;
+                break;
+            case InputType.TYPE_CLASS_TEXT:
+                mCurKeyboard = mQwertyKeyboard;
+                mPredictionOn = true;
+
+                int variation = attribute.inputType & InputType.TYPE_MASK_VARIATION;
+                if (variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+                        variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD) {
+                    mPredictionOn = false;
+                }
+
+                if (variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+                        || variation == InputType.TYPE_TEXT_VARIATION_URI
+                        || variation == InputType.TYPE_TEXT_VARIATION_FILTER) {
+                    mPredictionOn = false;
+                }
+
+                if ((attribute.inputType & InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE) != 0) {
+                    mPredictionOn = false;
+                    mCompletionOn = isFullscreenMode();
+                }
+
+                updateShiftKeyState(attribute);
+                break;
+            default:
+                mCurKeyboard = mQwertyKeyboard;
+                updateShiftKeyState(attribute);
+        }
+
+        // Only set IME options if keyboard is not null
+        if (mCurKeyboard != null) {
+            mCurKeyboard.setImeOptions(getResources(), attribute.imeOptions);
+        }
+    }
+    @Override
+    public void onStartInputView(EditorInfo attribute, boolean restarting) {
+        super.onStartInputView(attribute, restarting);
+
+        setLatinKeyboard(mCurKeyboard);
+
+        if (mInputView != null) {
+            mInputView.closing();
+            final InputMethodSubtype subtype = mInputMethodManager.getCurrentInputMethodSubtype();
+            mInputView.setSubtypeOnSpaceKey(subtype);
+            mInputView.requestLayout();
+        }
+
+        updateEmojiRowVisibility();
+    }
+    @Override
+    public void onComputeInsets(InputMethodService.Insets outInsets) {
+        super.onComputeInsets(outInsets);
+
+        if (isFloatingMode && kFrame != null && kFrame.getWidth() > 0 && kFrame.getHeight() > 0
+                && kFrame.getVisibility() == View.VISIBLE) {
+
+            Log.d("softkeyboard", "=== FLOATING MODE INSETS ===");
+
+            final int inputHeight = mInputView.getHeight();
+
+            DisplayMetrics metrics = getResources().getDisplayMetrics();
+            int containerHeight = 0;
+            if (parentContainer != null) {
+                containerHeight = parentContainer.getHeight();
+                Log.d("softkeyboard", "Parent container height: " + containerHeight);
+            } else {
+                containerHeight = inputHeight;
+                Log.w("softkeyboard", "Parent container null, using inputHeight as fallback: " + containerHeight);
+            }
+
+            int dynamicOffset = containerHeight;
+
+            Log.d("softkeyboard", "Using container height as dynamic offset: " + dynamicOffset);
+
+            outInsets.contentTopInsets = inputHeight + dynamicOffset;
+            outInsets.visibleTopInsets = inputHeight + dynamicOffset;
+
+            outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION;
+
+            // Actual floating keyboard bounds
+            float kFrameX = kFrame.getX();
+            float kFrameY = kFrame.getY();
+            float scaleX = kFrame.getScaleX();
+            float scaleY = kFrame.getScaleY();
+
+            // Calculate scaled dimensions
+            float scaledWidth = kFrame.getWidth() * scaleX;
+            float scaledHeight = kFrame.getHeight() * scaleY;
+
+            // Account for scaling from center
+            float xOffset = (kFrame.getWidth() - scaledWidth) / 2f;
+            float yOffset = (kFrame.getHeight() - scaledHeight) / 2f;
+
+            int resizeButtonSize = (int) (16 * getResources().getDisplayMetrics().density); // 16 dp in pixels
+            int resizeButtonPadding = (int) (6 * getResources().getDisplayMetrics().density); // padding
+            int extraSpace = resizeButtonSize + resizeButtonPadding;
+
+            // Calculate visual bounds with extra space for resize buttons
+            int left = Math.max(0, (int)(kFrameX + xOffset - extraSpace));
+            int top = Math.max(0, (int)(kFrameY + yOffset - extraSpace));
+            int right = (int)(kFrameX + xOffset + scaledWidth + extraSpace);
+            int bottom = (int)(kFrameY + yOffset + scaledHeight + extraSpace);
+
+            // Validate bounds against screen
+            metrics = getResources().getDisplayMetrics();
+            right = Math.min(right, metrics.widthPixels);
+            bottom = Math.min(bottom, metrics.heightPixels);
+
+            // Set touchable region to include the floating keyboard + resize button space
+            android.graphics.Region region = new android.graphics.Region();
+            region.set(left, top, right, bottom);
+            outInsets.touchableRegion.set(region);
+
+            Log.d("softkeyboard", "FLOATING insets with resize buttons - contentTop: " + outInsets.contentTopInsets +
+                    ", visibleTop: " + outInsets.visibleTopInsets);
+            Log.d("softkeyboard", "Touchable region (with resize buttons): " + left + "," + top + "," + right + "," + bottom);
+
+        } else {
+            // NORMAL MODE - Standard IME behavior
+            Log.d("softkeyboard", "=== NORMAL MODE INSETS ===");
+
+            int inputHeight = 0;
+            if (mInputView != null) {
+                inputHeight = mInputView.getHeight();
+            } else {
+                Log.w("softkeyboard", "mInputView is null in onComputeInsets()");
+            }
+
+            // Calculate heights for proper inset calculation
+            int emojiRowHeight = 0;
+            int topBarHeight = 0;
+
+            if (emojiRowContainer != null) {
+                emojiRowHeight = emojiRowContainer.getHeight();
+                Log.d("softkeyboard", "Emoji row height: " + emojiRowHeight + ", visibility: " +
+                        (emojiRowContainer.getVisibility() == View.VISIBLE ? "VISIBLE" : "GONE/INVISIBLE"));
+            }
+
+// DEBUG: Let's find out what's happening with the top bar
+            if (mInputView != null) {
+                View normalModeBar = mInputView.findViewById(R.id.normal_mode_bar);
+                Log.d("softkeyboard", "normalModeBar found: " + (normalModeBar != null));
+
+                if (normalModeBar != null) {
+                    Log.d("softkeyboard", "normalModeBar visibility: " + normalModeBar.getVisibility());
+                    Log.d("softkeyboard", "normalModeBar width: " + normalModeBar.getWidth());
+                    Log.d("softkeyboard", "normalModeBar height: " + normalModeBar.getHeight());
+                    Log.d("softkeyboard", "normalModeBar measuredHeight: " + normalModeBar.getMeasuredHeight());
+
+                    topBarHeight = normalModeBar.getHeight();
+
+                    // If height is 0, let's try to force measure
+                    if (topBarHeight == 0) {
+                        Log.d("softkeyboard", "Top bar height is 0, trying to force measure...");
+                        normalModeBar.measure(
+                                View.MeasureSpec.makeMeasureSpec(normalModeBar.getWidth(), View.MeasureSpec.EXACTLY),
+                                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                        );
+                        topBarHeight = normalModeBar.getMeasuredHeight();
+                        Log.d("softkeyboard", "After force measure, height: " + topBarHeight);
+
+                        // If STILL 0, use hardcoded value based on your XML (40dp)
+                        if (topBarHeight == 0) {
+                            topBarHeight = (int) (40 * getResources().getDisplayMetrics().density);
+                            Log.d("softkeyboard", "Using hardcoded fallback height: " + topBarHeight + "px (40dp)");
+                        }
+                    }
+                } else {
+                    Log.e("softkeyboard", "normalModeBar (R.id.normal_mode_bar) not found!");
+                    // Use hardcoded value since we can't find the view
+                    topBarHeight = (int) (40 * getResources().getDisplayMetrics().density);
+                    Log.d("softkeyboard", "Using hardcoded height since view not found: " + topBarHeight + "px");
+                }
+            } else {
+                Log.e("softkeyboard", "mInputView is null!");
+            }
+
+// Calculate where actual keyboard content starts
+            int keyboardContentStart = emojiRowHeight + topBarHeight;
+
+            Log.d("softkeyboard", "=== INSETS DEBUG ===");
+            Log.d("softkeyboard", "Total input height: " + inputHeight);
+            Log.d("softkeyboard", "Emoji row height: " + emojiRowHeight);
+            Log.d("softkeyboard", "Top bar height: " + topBarHeight);
+            Log.d("softkeyboard", "Keyboard content start offset: " + keyboardContentStart);
+            Log.d("softkeyboard", "Detected as chat app: " + isChatTextBox);
+        }
+    }
+
+    // Float related functions:
     private void setupFloatToggle(View layout) {
         floatToggleButton = layout.findViewById(R.id.float_toggle_button);
         if (floatToggleButton != null) {
@@ -516,6 +731,7 @@ public class SoftKeyboard extends InputMethodService
         });
     }
 
+    // Resizing functions:
     private void setupResizeButtons() {
         if (kTLBtn == null || kTRBtn == null || kBLBtn == null || kBRBtn == null) return;
 
@@ -742,8 +958,6 @@ public class SoftKeyboard extends InputMethodService
 
         Log.d("softkeyboard", "All resize buttons setup completed with L-shaped handles and visual feedback");
     }
-
-    // Add these helper methods for proper bounds checking
     private float applyScaleBounds(float scale) {
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         boolean isLandscape = metrics.widthPixels > metrics.heightPixels;
@@ -760,7 +974,6 @@ public class SoftKeyboard extends InputMethodService
 
         return Math.max(minScale, Math.min(scale, maxScale));
     }
-
     private boolean isScaleWithinScreenBounds(float scale) {
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         int screenWidth = metrics.widthPixels;
@@ -791,42 +1004,18 @@ public class SoftKeyboard extends InputMethodService
 
         return fitsHorizontally && fitsVertically && (scale >= MIN_SCALE) && (scale <= MAX_SCALE);
     }
-
     private void showResizeButtons() {
         if (kTLBtn != null) kTLBtn.setVisibility(View.VISIBLE);
         if (kTRBtn != null) kTRBtn.setVisibility(View.VISIBLE);
         if (kBLBtn != null) kBLBtn.setVisibility(View.VISIBLE);
         if (kBRBtn != null) kBRBtn.setVisibility(View.VISIBLE);
     }
-
-    @Override
-    public void showWindow(boolean showInput) {
-        try {
-            super.showWindow(showInput);
-            // When touch on any edit text corner resize button should appear for 4sec
-            if (isFloatingMode) {
-                if (kTLBtn != null) kTLBtn.setVisibility(View.VISIBLE);
-                if (kTRBtn != null) kTRBtn.setVisibility(View.VISIBLE);
-                if (kBLBtn != null) kBLBtn.setVisibility(View.VISIBLE);
-                if (kBRBtn != null) kBRBtn.setVisibility(View.VISIBLE);
-
-                // MODIFICATION: Only start delayed hide if no resize operation is active
-                if (!isResizeInProgress) {
-                    hideResizeButtonsDelayed();
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
     private void hideResizeButtons() {
         if (kTLBtn != null) kTLBtn.setVisibility(View.GONE);
         if (kTRBtn != null) kTRBtn.setVisibility(View.GONE);
         if (kBLBtn != null) kBLBtn.setVisibility(View.GONE);
         if (kBRBtn != null) kBRBtn.setVisibility(View.GONE);
     }
-
     private void hideResizeButtonsDelayed() {
         // Cancel any existing delayed hide operation
         if (hideResizeButtonsRunnable != null) {
@@ -850,7 +1039,6 @@ public class SoftKeyboard extends InputMethodService
 
         resizeButtonHandler.postDelayed(hideResizeButtonsRunnable, 4000); // Hide after 4 seconds
     }
-
     private void cancelDelayedHide() {
         if (hideResizeButtonsRunnable != null) {
             resizeButtonHandler.removeCallbacks(hideResizeButtonsRunnable);
@@ -858,167 +1046,8 @@ public class SoftKeyboard extends InputMethodService
             Log.d("softkeyboard", "Delayed hide operation cancelled");
         }
     }
-    @Override
-    public boolean onEvaluateInputViewShown() {
-        if (isFloatingMode) {
-            return true; // Always show input view in floating mode
-        }
-        return super.onEvaluateInputViewShown();
-    }
-    @Override
-    public void onComputeInsets(InputMethodService.Insets outInsets) {
-        super.onComputeInsets(outInsets);
 
-        if (isFloatingMode && kFrame != null && kFrame.getWidth() > 0 && kFrame.getHeight() > 0
-                && kFrame.getVisibility() == View.VISIBLE) {
-
-            Log.d("softkeyboard", "=== FLOATING MODE INSETS ===");
-
-            final int inputHeight = mInputView.getHeight();
-
-            DisplayMetrics metrics = getResources().getDisplayMetrics();
-            int containerHeight = 0;
-            if (parentContainer != null) {
-                containerHeight = parentContainer.getHeight();
-                Log.d("softkeyboard", "Parent container height: " + containerHeight);
-            } else {
-                containerHeight = inputHeight;
-                Log.w("softkeyboard", "Parent container null, using inputHeight as fallback: " + containerHeight);
-            }
-
-            int dynamicOffset = containerHeight;
-
-            Log.d("softkeyboard", "Using container height as dynamic offset: " + dynamicOffset);
-
-            outInsets.contentTopInsets = inputHeight + dynamicOffset;
-            outInsets.visibleTopInsets = inputHeight + dynamicOffset;
-
-            outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION;
-
-            // Actual floating keyboard bounds
-            float kFrameX = kFrame.getX();
-            float kFrameY = kFrame.getY();
-            float scaleX = kFrame.getScaleX();
-            float scaleY = kFrame.getScaleY();
-
-            // Calculate scaled dimensions
-            float scaledWidth = kFrame.getWidth() * scaleX;
-            float scaledHeight = kFrame.getHeight() * scaleY;
-
-            // Account for scaling from center
-            float xOffset = (kFrame.getWidth() - scaledWidth) / 2f;
-            float yOffset = (kFrame.getHeight() - scaledHeight) / 2f;
-
-            int resizeButtonSize = (int) (16 * getResources().getDisplayMetrics().density); // 16 dp in pixels
-            int resizeButtonPadding = (int) (6 * getResources().getDisplayMetrics().density); // padding
-            int extraSpace = resizeButtonSize + resizeButtonPadding;
-
-            // Calculate visual bounds with extra space for resize buttons
-            int left = Math.max(0, (int)(kFrameX + xOffset - extraSpace));
-            int top = Math.max(0, (int)(kFrameY + yOffset - extraSpace));
-            int right = (int)(kFrameX + xOffset + scaledWidth + extraSpace);
-            int bottom = (int)(kFrameY + yOffset + scaledHeight + extraSpace);
-
-            // Validate bounds against screen
-            metrics = getResources().getDisplayMetrics();
-            right = Math.min(right, metrics.widthPixels);
-            bottom = Math.min(bottom, metrics.heightPixels);
-
-            // Set touchable region to include the floating keyboard + resize button space
-            android.graphics.Region region = new android.graphics.Region();
-            region.set(left, top, right, bottom);
-            outInsets.touchableRegion.set(region);
-
-            Log.d("softkeyboard", "FLOATING insets with resize buttons - contentTop: " + outInsets.contentTopInsets +
-                    ", visibleTop: " + outInsets.visibleTopInsets);
-            Log.d("softkeyboard", "Touchable region (with resize buttons): " + left + "," + top + "," + right + "," + bottom);
-
-        } else {
-            // NORMAL MODE - Standard IME behavior
-            Log.d("softkeyboard", "=== NORMAL MODE INSETS ===");
-
-            int inputHeight = 0;
-            if (mInputView != null) {
-                inputHeight = mInputView.getHeight();
-            } else {
-                Log.w("softkeyboard", "mInputView is null in onComputeInsets()");
-            }
-
-            // Calculate heights for proper inset calculation
-            int emojiRowHeight = 0;
-            int topBarHeight = 0;
-
-            if (emojiRowContainer != null) {
-                emojiRowHeight = emojiRowContainer.getHeight();
-                Log.d("softkeyboard", "Emoji row height: " + emojiRowHeight + ", visibility: " +
-                        (emojiRowContainer.getVisibility() == View.VISIBLE ? "VISIBLE" : "GONE/INVISIBLE"));
-            }
-
-// DEBUG: Let's find out what's happening with the top bar
-            if (mInputView != null) {
-                View normalModeBar = mInputView.findViewById(R.id.normal_mode_bar);
-                Log.d("softkeyboard", "normalModeBar found: " + (normalModeBar != null));
-
-                if (normalModeBar != null) {
-                    Log.d("softkeyboard", "normalModeBar visibility: " + normalModeBar.getVisibility());
-                    Log.d("softkeyboard", "normalModeBar width: " + normalModeBar.getWidth());
-                    Log.d("softkeyboard", "normalModeBar height: " + normalModeBar.getHeight());
-                    Log.d("softkeyboard", "normalModeBar measuredHeight: " + normalModeBar.getMeasuredHeight());
-
-                    topBarHeight = normalModeBar.getHeight();
-
-                    // If height is 0, let's try to force measure
-                    if (topBarHeight == 0) {
-                        Log.d("softkeyboard", "Top bar height is 0, trying to force measure...");
-                        normalModeBar.measure(
-                                View.MeasureSpec.makeMeasureSpec(normalModeBar.getWidth(), View.MeasureSpec.EXACTLY),
-                                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-                        );
-                        topBarHeight = normalModeBar.getMeasuredHeight();
-                        Log.d("softkeyboard", "After force measure, height: " + topBarHeight);
-
-                        // If STILL 0, use hardcoded value based on your XML (40dp)
-                        if (topBarHeight == 0) {
-                            topBarHeight = (int) (40 * getResources().getDisplayMetrics().density);
-                            Log.d("softkeyboard", "Using hardcoded fallback height: " + topBarHeight + "px (40dp)");
-                        }
-                    }
-                } else {
-                    Log.e("softkeyboard", "normalModeBar (R.id.normal_mode_bar) not found!");
-                    // Use hardcoded value since we can't find the view
-                    topBarHeight = (int) (40 * getResources().getDisplayMetrics().density);
-                    Log.d("softkeyboard", "Using hardcoded height since view not found: " + topBarHeight + "px");
-                }
-            } else {
-                Log.e("softkeyboard", "mInputView is null!");
-            }
-
-// Calculate where actual keyboard content starts
-            int keyboardContentStart = emojiRowHeight + topBarHeight;
-
-            Log.d("softkeyboard", "=== INSETS DEBUG ===");
-            Log.d("softkeyboard", "Total input height: " + inputHeight);
-            Log.d("softkeyboard", "Emoji row height: " + emojiRowHeight);
-            Log.d("softkeyboard", "Top bar height: " + topBarHeight);
-            Log.d("softkeyboard", "Keyboard content start offset: " + keyboardContentStart);
-            Log.d("softkeyboard", "Detected as chat app: " + isChatTextBox);
-        }
-    }
-    @Override
-    public boolean onEvaluateFullscreenMode() {
-        // Never use fullscreen mode - it interferes with floating
-        return false;
-    }
-    // Add this new method to SoftKeyboard.java:
-    private void setupSharingButtons(View layout) {
-        Button shareTextButton = layout.findViewById(R.id.share_text_button);
-
-        if (shareTextButton != null) {
-            shareTextButton.setOnClickListener(v -> {
-                SoftKeyboardSharingExtensionKt.shareCurrentText(this);
-            });
-        }
-    }
+    // Generic mode related functions
     private void switchToNormalMode() {
         isFloatingMode = false;
 
@@ -1034,83 +1063,51 @@ public class SoftKeyboard extends InputMethodService
             onStartInputView(currentEditorInfo, true);
         }
     }
-    private void hideOverlay() {
-        if (overlayView != null && overlayWindowManager != null && isOverlayVisible) {
-            try {
-                overlayWindowManager.removeView(overlayView);
-                isOverlayVisible = false;
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to hide overlay", e);
+    @Override
+    public void showWindow(boolean showInput) {
+        try {
+            super.showWindow(showInput);
+            // When touch on any edit text corner resize button should appear for 4sec
+            if (isFloatingMode) {
+                if (kTLBtn != null) kTLBtn.setVisibility(View.VISIBLE);
+                if (kTRBtn != null) kTRBtn.setVisibility(View.VISIBLE);
+                if (kBLBtn != null) kBLBtn.setVisibility(View.VISIBLE);
+                if (kBRBtn != null) kBRBtn.setVisibility(View.VISIBLE);
+
+                // MODIFICATION: Only start delayed hide if no resize operation is active
+                if (!isResizeInProgress) {
+                    hideResizeButtonsDelayed();
+                }
             }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-    }
-    private void setLatinKeyboard(LatinKeyboard nextKeyboard) {
-        setActiveKeyboard(nextKeyboard);
     }
     @Override
-    public void onStartInput(EditorInfo attribute, boolean restarting) {
-        super.onStartInput(attribute, restarting);
-
-        mComposing.setLength(0);
-
-        if (!restarting) {
-            mMetaState = 0;
+    public boolean onEvaluateInputViewShown() {
+        if (isFloatingMode) {
+            return true; // Always show input view in floating mode
         }
+        return super.onEvaluateInputViewShown();
+    }
+    @Override
+    public boolean onEvaluateFullscreenMode() {
+        // Never use fullscreen mode - it interferes with floating
+        return false;
+    }
 
-        mPredictionOn = false;
-        mCompletionOn = false;
-        mCompletions = null;
+    // sharing linkage
+    private void setupSharingButtons(View layout) {
+        Button shareTextButton = layout.findViewById(R.id.share_text_button);
 
-        isChatTextBox = detectChatTextBox(attribute);
-        updateEmojiRowVisibility();
-
-        // Ensure keyboards are initialized
-        if (!mKeyboardsInitialized || mQwertyKeyboard == null) {
-            onInitializeInterface();
-        }
-
-        // Determine keyboard type based on input type
-        switch (attribute.inputType & InputType.TYPE_MASK_CLASS) {
-            case InputType.TYPE_CLASS_NUMBER:
-            case InputType.TYPE_CLASS_DATETIME:
-                mCurKeyboard = mSymbolsKeyboard;
-                break;
-            case InputType.TYPE_CLASS_PHONE:
-                mCurKeyboard = mSymbolsKeyboard;
-                break;
-            case InputType.TYPE_CLASS_TEXT:
-                mCurKeyboard = mQwertyKeyboard;
-                mPredictionOn = true;
-
-                int variation = attribute.inputType & InputType.TYPE_MASK_VARIATION;
-                if (variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
-                        variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD) {
-                    mPredictionOn = false;
-                }
-
-                if (variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-                        || variation == InputType.TYPE_TEXT_VARIATION_URI
-                        || variation == InputType.TYPE_TEXT_VARIATION_FILTER) {
-                    mPredictionOn = false;
-                }
-
-                if ((attribute.inputType & InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE) != 0) {
-                    mPredictionOn = false;
-                    mCompletionOn = isFullscreenMode();
-                }
-
-                updateShiftKeyState(attribute);
-                break;
-            default:
-                mCurKeyboard = mQwertyKeyboard;
-                updateShiftKeyState(attribute);
-        }
-
-        // Only set IME options if keyboard is not null
-        if (mCurKeyboard != null) {
-            mCurKeyboard.setImeOptions(getResources(), attribute.imeOptions);
+        if (shareTextButton != null) {
+            shareTextButton.setOnClickListener(v -> {
+                SoftKeyboardSharingExtensionKt.shareCurrentText(this);
+            });
         }
     }
+
+    // Emoji analysis and suggestion functions
     private boolean detectChatTextBox(EditorInfo editorInfo) {
         if (editorInfo == null) return false;
 
@@ -1200,265 +1197,123 @@ public class SoftKeyboard extends InputMethodService
 
         return isChatDetected;
     }
-    private void logInputFlags(int inputFlags) {
-        Log.d("ChatDetection", "Input Flags Analysis:");
-
-        if ((inputFlags & InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS) != 0) {
-            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_CAP_CHARACTERS");
-        }
-        if ((inputFlags & InputType.TYPE_TEXT_FLAG_CAP_WORDS) != 0) {
-            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_CAP_WORDS");
-        }
-        if ((inputFlags & InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) != 0) {
-            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_CAP_SENTENCES");
-        }
-        if ((inputFlags & InputType.TYPE_TEXT_FLAG_AUTO_CORRECT) != 0) {
-            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_AUTO_CORRECT");
-        }
-        if ((inputFlags & InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE) != 0) {
-            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_AUTO_COMPLETE");
-        }
-        if ((inputFlags & InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0) {
-            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_MULTI_LINE");
-        }
-        if ((inputFlags & InputType.TYPE_TEXT_FLAG_IME_MULTI_LINE) != 0) {
-            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_IME_MULTI_LINE");
-        }
-        if ((inputFlags & InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) {
-            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_NO_SUGGESTIONS");
-        }
-    }
-    private String getInputClassName(int inputClass) {
-        switch (inputClass) {
-            case InputType.TYPE_CLASS_TEXT: return "TYPE_CLASS_TEXT";
-            case InputType.TYPE_CLASS_NUMBER: return "TYPE_CLASS_NUMBER";
-            case InputType.TYPE_CLASS_PHONE: return "TYPE_CLASS_PHONE";
-            case InputType.TYPE_CLASS_DATETIME: return "TYPE_CLASS_DATETIME";
-            default: return "UNKNOWN";
-        }
-    }
-    private String getInputVariationName(int inputVariation) {
-        switch (inputVariation) {
-            case InputType.TYPE_TEXT_VARIATION_NORMAL: return "TYPE_TEXT_VARIATION_NORMAL";
-            case InputType.TYPE_TEXT_VARIATION_URI: return "TYPE_TEXT_VARIATION_URI";
-            case InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS: return "TYPE_TEXT_VARIATION_EMAIL_ADDRESS";
-            case InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT: return "TYPE_TEXT_VARIATION_EMAIL_SUBJECT";
-            case InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE: return "TYPE_TEXT_VARIATION_SHORT_MESSAGE";
-            case InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE: return "TYPE_TEXT_VARIATION_LONG_MESSAGE";
-            case InputType.TYPE_TEXT_VARIATION_PERSON_NAME: return "TYPE_TEXT_VARIATION_PERSON_NAME";
-            case InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS: return "TYPE_TEXT_VARIATION_POSTAL_ADDRESS";
-            case InputType.TYPE_TEXT_VARIATION_PASSWORD: return "TYPE_TEXT_VARIATION_PASSWORD";
-            case InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD: return "TYPE_TEXT_VARIATION_VISIBLE_PASSWORD";
-            case InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT: return "TYPE_TEXT_VARIATION_WEB_EDIT_TEXT";
-            case InputType.TYPE_TEXT_VARIATION_FILTER: return "TYPE_TEXT_VARIATION_FILTER";
-            case InputType.TYPE_TEXT_VARIATION_PHONETIC: return "TYPE_TEXT_VARIATION_PHONETIC";
-            case InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS: return "TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS";
-            case InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD: return "TYPE_TEXT_VARIATION_WEB_PASSWORD";
-            default: return "UNKNOWN";
-        }
-    }
-    private String getImeActionName(int actionId) {
-        switch (actionId) {
-            case EditorInfo.IME_ACTION_UNSPECIFIED: return "IME_ACTION_UNSPECIFIED";
-            case EditorInfo.IME_ACTION_NONE: return "IME_ACTION_NONE";
-            case EditorInfo.IME_ACTION_GO: return "IME_ACTION_GO";
-            case EditorInfo.IME_ACTION_SEARCH: return "IME_ACTION_SEARCH";
-            case EditorInfo.IME_ACTION_SEND: return "IME_ACTION_SEND";
-            case EditorInfo.IME_ACTION_NEXT: return "IME_ACTION_NEXT";
-            case EditorInfo.IME_ACTION_DONE: return "IME_ACTION_DONE";
-            case EditorInfo.IME_ACTION_PREVIOUS: return "IME_ACTION_PREVIOUS";
-            default: return "UNKNOWN";
-        }
-    }
-    private void updateEmojiRowVisibility() {
-        if (emojiRowContainer != null) {
-            int visibility = isChatTextBox ? View.VISIBLE : View.GONE;
-            emojiRowContainer.setVisibility(visibility);
-
-            Log.d("softkeyboard", "Emoji row visibility: " + (isChatTextBox ? "VISIBLE" : "GONE"));
-        }
-    }
-    @Override
-    public void onStartInputView(EditorInfo attribute, boolean restarting) {
-        super.onStartInputView(attribute, restarting);
-
-        setLatinKeyboard(mCurKeyboard);
-
-        if (mInputView != null) {
-            mInputView.closing();
-            final InputMethodSubtype subtype = mInputMethodManager.getCurrentInputMethodSubtype();
-            mInputView.setSubtypeOnSpaceKey(subtype);
-            mInputView.requestLayout();
-        }
-
-        updateEmojiRowVisibility();
-    }
-    @Override
-    public void onCurrentInputMethodSubtypeChanged(InputMethodSubtype subtype) {
-        if (mInputView != null) {
-            mInputView.setSubtypeOnSpaceKey(subtype);
-        }
-    }
-    private void updateShiftKeyState(EditorInfo attr) {
-        Log.d("softkeyboard", "=== updateShiftKeyState called ===");
-        Log.d("softkeyboard", "Before update - shift: " + (mInputView != null && mQwertyKeyboard == mInputView.getKeyboard() ? mQwertyKeyboard.isShifted() : "N/A"));
-        Log.d("softkeyboard", "Before update - caps lock: " + mCapsLock);
-
-        if (attr != null && mInputView != null && mQwertyKeyboard == mInputView.getKeyboard()) {
-            int caps = 0;
-            EditorInfo ei = getCurrentInputEditorInfo();
-            if (ei != null && ei.inputType != InputType.TYPE_NULL) {
-                caps = getCurrentInputConnection().getCursorCapsMode(attr.inputType);
-            }
-
-            Log.d("softkeyboard", "Cursor caps mode: " + caps);
-
-            // IMPORTANT: Don't override manual shift/caps lock state
-            boolean shouldBeShifted = mCapsLock || caps != 0;
-
-            // If we manually set shift (not caps lock), preserve it
-            if (!mCapsLock && mQwertyKeyboard.isShifted()) {
-                shouldBeShifted = true;
-                Log.d("softkeyboard", "Preserving manual shift state");
-            }
-
-            mInputView.setShifted(shouldBeShifted);
-            Log.d("softkeyboard", "After update - shift set to: " + shouldBeShifted);
-        }
-
-        Log.d("softkeyboard", "=== updateShiftKeyState completed ===");
-    }
-    @Override
-    public void onKey(int primaryCode, int[] keyCodes) {
-        Log.d("softkeyboard", "=== onKey called ===");
-        Log.d("softkeyboard", "primaryCode: " + primaryCode);
-        Log.d("softkeyboard", "Keyboard.KEYCODE_SHIFT = " + Keyboard.KEYCODE_SHIFT);
-        Log.d("softkeyboard", "isFloatingMode: " + isFloatingMode);
-
-        // Check if this is the shift key
-        if (primaryCode == Keyboard.KEYCODE_SHIFT) {
-            Log.d("softkeyboard", "SHIFT KEY MATCHED!");
-        }
-
-        // CRITICAL: Ensure input connection is active in floating mode
-        InputConnection ic = getCurrentInputConnection();
-        if (ic == null) {
-            Log.e("softkeyboard", "No input connection available");
-            return;
-        }
-
-        Log.d("softkeyboard", "Input connection available, processing key");
-
-        if (isWordSeparator(primaryCode)) {
-            // Handle separator (including space)
-            if (mComposing.length() > 0) {
-                commitTyped(getCurrentInputConnection());
-            }
-            sendKey(primaryCode);
-            updateShiftKeyState(getCurrentInputEditorInfo());
-
-            // Special handling for space - check the word that was just completed
-            if (primaryCode == ' ') {
-                String lastWord = getLastWordFromCommittedText();
-                Log.d("EmojiDebug", "Space pressed, last word: '" + lastWord + "'");
-                notifyEmojiManagersWordCompletion(lastWord);
-            } else {
-                // For other separators, use the general word change notification
-                notifyEmojiManagersWordChange();
-            }
-            return;
-
-        }
-
-        // Process the key normally
-        switch (primaryCode) {
-            case Keyboard.KEYCODE_DELETE:
-                Log.d("softkeyboard", "Processing backspace");
-                ic.deleteSurroundingText(1, 0);
-                notifyEmojiManagersWordChange();
-                break;
-
-            case Keyboard.KEYCODE_SHIFT:
-                Log.d("softkeyboard", "SHIFT KEY DETECTED - Processing shift");
-                handleShiftKey();
-                return; // Important: return here, don't break
-
-            case Keyboard.KEYCODE_MODE_CHANGE:
-                Log.d("softkeyboard", "Processing mode change");
-                handleModeChange();
-                break;
-
-
-            case '\n':
-                Log.d("softkeyboard", "Processing enter/return");
-                ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
-                ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
-                break;
-
-            default:
-                if (primaryCode > 0) {
-                    char code = (char) primaryCode;
-
-                    Log.d("softkeyboard", "=== Character processing start ===");
-                    Log.d("softkeyboard", "mCurKeyboard.isShifted(): " + (mCurKeyboard != null ? mCurKeyboard.isShifted() : "null keyboard"));
-                    Log.d("softkeyboard", "mCapsLock: " + mCapsLock);
-                    Log.d("softkeyboard", "mInputView.isShifted(): " + (mInputView != null ? mInputView.isShifted() : "null inputview"));
-
-                    // IMPORTANT: Check shift/caps state BEFORE any modifications
-                    boolean shouldCapitalize = false;
-                    if (Character.isLetter(code)) {
-                        shouldCapitalize = mCapsLock || (mCurKeyboard != null && mCurKeyboard.isShifted());
-                        Log.d("softkeyboard", "shouldCapitalize: " + shouldCapitalize + " (caps: " + mCapsLock + ", shift: " + (mCurKeyboard != null ? mCurKeyboard.isShifted() : "null") + ")");
-                    }
-
-                    // Apply capitalization
-                    if (shouldCapitalize) {
-                        code = Character.toUpperCase(code);
-                        Log.d("softkeyboard", "Applied caps/shift: " + code);
-                    } else {
-                        code = Character.toLowerCase(code);
-                    }
-
-                    Log.d("softkeyboard", "Processing character: " + code + " (code: " + primaryCode + ")");
-                    ic.commitText(String.valueOf(code), 1);
-
-                    // IMPORTANT: Reset shift state AFTER character processing (but ONLY if not in caps lock mode)
-                    if (!mCapsLock && mCurKeyboard != null && mCurKeyboard.isShifted()) {
-                        Log.d("softkeyboard", "About to reset shift state");
-                        mCurKeyboard.setShifted(false);
-                        mInputView.invalidateAllKeys();
-                        Log.d("softkeyboard", "Shift reset after character input");
-                    }
-
-                    notifyEmojiManagersWordChange();
-                    Log.d("softkeyboard", "=== Character processing end ===");
-                } else {
-                    Log.w("softkeyboard", "Unhandled primaryCode: " + primaryCode);
-                }
-                break;
-        }
-    }
-    // Keep this simple delegation method in SoftKeyboard.java
     public boolean sendEmojiDirectly(String emojiUnicode) {
         // Delegate to Kotlin extension
         return SoftKeyboardSharingExtensionKt.sendEmojiDirectly(this, emojiUnicode);
     }
-    public boolean isWordSeparator(int code) {
-        String separators = mWordSeparators;
-        return separators.contains(String.valueOf((char)code));
+    public void insertEmojiText(String emojiUnicode) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+
+        // Begin batch edit for better performance
+        ic.beginBatchEdit();
+
+        // Commit any composing text first to preserve it
+        if (mComposing.length() > 0) {
+            ic.commitText(mComposing, 1);
+            mComposing.setLength(0);  // Clear the composing buffer
+        }
+
+        // Insert the emoji
+        ic.commitText(emojiUnicode, 1);
+
+        // End batch edit
+        ic.endBatchEdit();
+
+        // Update shift key state
+        updateShiftKeyState(getCurrentInputEditorInfo());
+
+        // Reset emoji managers to default after emoji insertion
+        if (normalEmojiManager != null) {
+            normalEmojiManager.resetToDefault();
+        }
     }
-    private void sendKey(int keyCode) {
-        switch (keyCode) {
-            case '\n':
-                keyDownUp(KeyEvent.KEYCODE_ENTER);
-                break;
-            default:
-                if (keyCode >= '0' && keyCode <= '9') {
-                    keyDownUp(keyCode - '0' + KeyEvent.KEYCODE_0);
-                } else {
-                    getCurrentInputConnection().commitText(String.valueOf((char) keyCode), 1);
+    public boolean isChatTextBox(){
+        return isChatTextBox;
+    }
+    public void replaceCurrentWordWithEmoji(String emojiUnicode) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+
+        Log.d("EmojiDebug", "=== REPLACE CURRENT WORD WITH EMOJI ===");
+        Log.d("EmojiDebug", "Emoji to insert: " + emojiUnicode);
+
+        ic.beginBatchEdit();
+
+        if (mComposing.length() > 0) {
+            // Case 1: We have composing text - use the original method
+            Log.d("EmojiDebug", "Case 1: Replacing composing text");
+            int composingLength = mComposing.length();
+            Log.d("EmojiDebug", "Composing text: '" + mComposing.toString() + "' (length: " + composingLength + ")");
+
+            ic.finishComposingText(); // Commit the composing text
+            ic.deleteSurroundingText(composingLength, 0); // Delete it
+            mComposing.setLength(0); // Clear internal buffer
+
+        } else {
+            // Case 2: No composing text - need to find and replace the current word
+            Log.d("EmojiDebug", "Case 2: No composing text, finding current word in committed text");
+
+            CharSequence textBefore = ic.getTextBeforeCursor(50, 0);
+            CharSequence textAfter = ic.getTextAfterCursor(10, 0);
+
+            if (textBefore == null) textBefore = "";
+            if (textAfter == null) textAfter = "";
+
+            String beforeStr = textBefore.toString();
+            String afterStr = textAfter.toString();
+
+            Log.d("EmojiDebug", "Text before cursor: '" + beforeStr + "'");
+            Log.d("EmojiDebug", "Text after cursor: '" + afterStr + "'");
+
+            // Find the current word boundaries
+            int charsToDeleteBefore = 0;
+            int charsToDeleteAfter = 0;
+
+            // Count characters to delete before cursor (back to start of word)
+            for (int i = beforeStr.length() - 1; i >= 0; i--) {
+                char c = beforeStr.charAt(i);
+                if (Character.isWhitespace(c) || isPunctuation(c)) {
+                    break;
                 }
-                break;
+                charsToDeleteBefore++;
+            }
+
+            // Count characters to delete after cursor (forward to end of word)
+            for (int i = 0; i < afterStr.length(); i++) {
+                char c = afterStr.charAt(i);
+                if (Character.isWhitespace(c) || isPunctuation(c)) {
+                    break;
+                }
+                charsToDeleteAfter++;
+            }
+
+            Log.d("EmojiDebug", "Characters to delete - before: " + charsToDeleteBefore + ", after: " + charsToDeleteAfter);
+
+            // Delete the current word
+            if (charsToDeleteBefore > 0 || charsToDeleteAfter > 0) {
+                ic.deleteSurroundingText(charsToDeleteBefore, charsToDeleteAfter);
+                Log.d("EmojiDebug", "Deleted current word using deleteSurroundingText(" + charsToDeleteBefore + ", " + charsToDeleteAfter + ")");
+            }
+        }
+
+        // Insert the emoji
+        Log.d("EmojiDebug", "Inserting emoji: " + emojiUnicode);
+        ic.commitText(emojiUnicode, 1);
+
+        ic.endBatchEdit();
+
+        // Debug after operation
+        CharSequence textAfter = ic.getTextBeforeCursor(20, 0);
+        Log.d("EmojiDebug", "Text after operation (20 chars): '" + textAfter + "'");
+        Log.d("EmojiDebug", "=== END REPLACE OPERATION ===");
+
+        // Update shift key state
+        updateShiftKeyState(getCurrentInputEditorInfo());
+
+        // Notify emoji managers to reset to default
+        if (normalEmojiManager != null) {
+            normalEmojiManager.resetToDefault();
         }
     }
     private String getLastWordFromCommittedText() {
@@ -1615,7 +1470,188 @@ public class SoftKeyboard extends InputMethodService
             return false;
         }
     }
+    private void updateEmojiRowVisibility() {
+        if (emojiRowContainer != null) {
+            int visibility = isChatTextBox ? View.VISIBLE : View.GONE;
+            emojiRowContainer.setVisibility(visibility);
 
+            Log.d("softkeyboard", "Emoji row visibility: " + (isChatTextBox ? "VISIBLE" : "GONE"));
+        }
+    }
+
+    // IME functions
+    @Override
+    public void onCurrentInputMethodSubtypeChanged(InputMethodSubtype subtype) {
+        if (mInputView != null) {
+            mInputView.setSubtypeOnSpaceKey(subtype);
+        }
+    }
+    private void updateShiftKeyState(EditorInfo attr) {
+        Log.d("softkeyboard", "=== updateShiftKeyState called ===");
+        Log.d("softkeyboard", "Before update - shift: " + (mInputView != null && mQwertyKeyboard == mInputView.getKeyboard() ? mQwertyKeyboard.isShifted() : "N/A"));
+        Log.d("softkeyboard", "Before update - caps lock: " + mCapsLock);
+
+        if (attr != null && mInputView != null && mQwertyKeyboard == mInputView.getKeyboard()) {
+            int caps = 0;
+            EditorInfo ei = getCurrentInputEditorInfo();
+            if (ei != null && ei.inputType != InputType.TYPE_NULL) {
+                caps = getCurrentInputConnection().getCursorCapsMode(attr.inputType);
+            }
+
+            Log.d("softkeyboard", "Cursor caps mode: " + caps);
+
+            // IMPORTANT: Don't override manual shift/caps lock state
+            boolean shouldBeShifted = mCapsLock || caps != 0;
+
+            // If we manually set shift (not caps lock), preserve it
+            if (!mCapsLock && mQwertyKeyboard.isShifted()) {
+                shouldBeShifted = true;
+                Log.d("softkeyboard", "Preserving manual shift state");
+            }
+
+            mInputView.setShifted(shouldBeShifted);
+            Log.d("softkeyboard", "After update - shift set to: " + shouldBeShifted);
+        }
+
+        Log.d("softkeyboard", "=== updateShiftKeyState completed ===");
+    }
+    @Override
+    public void onKey(int primaryCode, int[] keyCodes) {
+        Log.d("softkeyboard", "=== onKey called ===");
+        Log.d("softkeyboard", "primaryCode: " + primaryCode);
+        Log.d("softkeyboard", "Keyboard.KEYCODE_SHIFT = " + Keyboard.KEYCODE_SHIFT);
+        Log.d("softkeyboard", "isFloatingMode: " + isFloatingMode);
+
+        // Check if this is the shift key
+        if (primaryCode == Keyboard.KEYCODE_SHIFT) {
+            Log.d("softkeyboard", "SHIFT KEY MATCHED!");
+        }
+
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) {
+            Log.e("softkeyboard", "No input connection available");
+            return;
+        }
+
+        Log.d("softkeyboard", "Input connection available, processing key");
+
+        if (isWordSeparator(primaryCode)) {
+            // Handle separator (including space)
+            if (mComposing.length() > 0) {
+                commitTyped(getCurrentInputConnection());
+            }
+            sendKey(primaryCode);
+            updateShiftKeyState(getCurrentInputEditorInfo());
+
+            // Special handling for space - check the word that was just completed
+            if (primaryCode == ' ') {
+                String lastWord = getLastWordFromCommittedText();
+                Log.d("EmojiDebug", "Space pressed, last word: '" + lastWord + "'");
+                notifyEmojiManagersWordCompletion(lastWord);
+            } else {
+                // For other separators, use the general word change notification
+                notifyEmojiManagersWordChange();
+            }
+            return;
+
+        }
+
+        // Process the key normally
+        switch (primaryCode) {
+            case Keyboard.KEYCODE_DELETE:
+                Log.d("softkeyboard", "Processing backspace");
+
+                if (ic != null) {
+                    // Check if there's selected text first
+                    CharSequence selectedText = ic.getSelectedText(0);
+                    if (selectedText != null && selectedText.length() > 0) {
+                        // Delete selected text
+                        ic.commitText("", 1);
+                        Log.d("softkeyboard", "Deleted selected text: " + selectedText.length() + " chars");
+                    } else {
+                        // No selection - normal single character deletion
+                        ic.deleteSurroundingText(1, 0);
+                        Log.d("softkeyboard", "Deleted single character");
+                    }
+                }
+
+                notifyEmojiManagersWordChange();
+                break;
+
+            case Keyboard.KEYCODE_SHIFT:
+                Log.d("softkeyboard", "SHIFT KEY DETECTED - Processing shift");
+                handleShiftKey();
+                return; // Important: return here, don't break
+
+            case Keyboard.KEYCODE_MODE_CHANGE:
+                Log.d("softkeyboard", "Processing mode change");
+                handleModeChange();
+                break;
+
+
+            case '\n':
+                Log.d("softkeyboard", "Processing enter/return");
+                ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+                break;
+
+            default:
+                if (primaryCode > 0) {
+                    char code = (char) primaryCode;
+
+                    Log.d("softkeyboard", "=== Character processing start ===");
+                    Log.d("softkeyboard", "mCurKeyboard.isShifted(): " + (mCurKeyboard != null ? mCurKeyboard.isShifted() : "null keyboard"));
+                    Log.d("softkeyboard", "mCapsLock: " + mCapsLock);
+                    Log.d("softkeyboard", "mInputView.isShifted(): " + (mInputView != null ? mInputView.isShifted() : "null inputview"));
+
+                    // IMPORTANT: Check shift/caps state BEFORE any modifications
+                    boolean shouldCapitalize = false;
+                    if (Character.isLetter(code)) {
+                        shouldCapitalize = mCapsLock || (mCurKeyboard != null && mCurKeyboard.isShifted());
+                        Log.d("softkeyboard", "shouldCapitalize: " + shouldCapitalize + " (caps: " + mCapsLock + ", shift: " + (mCurKeyboard != null ? mCurKeyboard.isShifted() : "null") + ")");
+                    }
+
+                    // Apply capitalization
+                    if (shouldCapitalize) {
+                        code = Character.toUpperCase(code);
+                        Log.d("softkeyboard", "Applied caps/shift: " + code);
+                    } else {
+                        code = Character.toLowerCase(code);
+                    }
+
+                    Log.d("softkeyboard", "Processing character: " + code + " (code: " + primaryCode + ")");
+                    ic.commitText(String.valueOf(code), 1);
+
+                    // IMPORTANT: Reset shift state AFTER character processing (but ONLY if not in caps lock mode)
+                    if (!mCapsLock && mCurKeyboard != null && mCurKeyboard.isShifted()) {
+                        Log.d("softkeyboard", "About to reset shift state");
+                        mCurKeyboard.setShifted(false);
+                        mInputView.invalidateAllKeys();
+                        Log.d("softkeyboard", "Shift reset after character input");
+                    }
+
+                    notifyEmojiManagersWordChange();
+                    Log.d("softkeyboard", "=== Character processing end ===");
+                } else {
+                    Log.w("softkeyboard", "Unhandled primaryCode: " + primaryCode);
+                }
+                break;
+        }
+    }
+    private void sendKey(int keyCode) {
+        switch (keyCode) {
+            case '\n':
+                keyDownUp(KeyEvent.KEYCODE_ENTER);
+                break;
+            default:
+                if (keyCode >= '0' && keyCode <= '9') {
+                    keyDownUp(keyCode - '0' + KeyEvent.KEYCODE_0);
+                } else {
+                    getCurrentInputConnection().commitText(String.valueOf((char) keyCode), 1);
+                }
+                break;
+        }
+    }
     private void handleShiftKey() {
         Log.d("softkeyboard", "=== handleShiftKey called ===");
 
@@ -1673,8 +1709,13 @@ public class SoftKeyboard extends InputMethodService
             mInputView.setKeyboard(mCurKeyboard);
         }
     }
-
-    // 6. Update setActiveKeyboard to add more detailed logging
+    public boolean isWordSeparator(int code) {
+        String separators = mWordSeparators;
+        return separators.contains(String.valueOf((char)code));
+    }
+    private void setLatinKeyboard(LatinKeyboard nextKeyboard) {
+        setActiveKeyboard(nextKeyboard);
+    }
     private void setActiveKeyboard(LatinKeyboard nextKeyboard) {
         final boolean shouldSupportLanguageSwitchKey =
                 mInputMethodManager.shouldOfferSwitchingToNextInputMethod(getToken());
@@ -1689,18 +1730,76 @@ public class SoftKeyboard extends InputMethodService
 
         mCurKeyboard = nextKeyboard;
     }
+    private void logInputFlags(int inputFlags) {
+        Log.d("ChatDetection", "Input Flags Analysis:");
 
-    @Override
-    public void onFinishInput() {
-        super.onFinishInput();
-        mComposing.setLength(0);
-        setCandidatesViewShown(false);
-        mCurKeyboard = mQwertyKeyboard;
-        if (mInputView != null) {
-            mInputView.closing();
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_CAP_CHARACTERS");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_CAP_WORDS) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_CAP_WORDS");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_CAP_SENTENCES");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_AUTO_CORRECT) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_AUTO_CORRECT");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_AUTO_COMPLETE");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_MULTI_LINE");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_IME_MULTI_LINE) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_IME_MULTI_LINE");
+        }
+        if ((inputFlags & InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) {
+            Log.d("ChatDetection", "  - TYPE_TEXT_FLAG_NO_SUGGESTIONS");
         }
     }
-
+    private String getInputClassName(int inputClass) {
+        switch (inputClass) {
+            case InputType.TYPE_CLASS_TEXT: return "TYPE_CLASS_TEXT";
+            case InputType.TYPE_CLASS_NUMBER: return "TYPE_CLASS_NUMBER";
+            case InputType.TYPE_CLASS_PHONE: return "TYPE_CLASS_PHONE";
+            case InputType.TYPE_CLASS_DATETIME: return "TYPE_CLASS_DATETIME";
+            default: return "UNKNOWN";
+        }
+    }
+    private String getInputVariationName(int inputVariation) {
+        switch (inputVariation) {
+            case InputType.TYPE_TEXT_VARIATION_NORMAL: return "TYPE_TEXT_VARIATION_NORMAL";
+            case InputType.TYPE_TEXT_VARIATION_URI: return "TYPE_TEXT_VARIATION_URI";
+            case InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS: return "TYPE_TEXT_VARIATION_EMAIL_ADDRESS";
+            case InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT: return "TYPE_TEXT_VARIATION_EMAIL_SUBJECT";
+            case InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE: return "TYPE_TEXT_VARIATION_SHORT_MESSAGE";
+            case InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE: return "TYPE_TEXT_VARIATION_LONG_MESSAGE";
+            case InputType.TYPE_TEXT_VARIATION_PERSON_NAME: return "TYPE_TEXT_VARIATION_PERSON_NAME";
+            case InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS: return "TYPE_TEXT_VARIATION_POSTAL_ADDRESS";
+            case InputType.TYPE_TEXT_VARIATION_PASSWORD: return "TYPE_TEXT_VARIATION_PASSWORD";
+            case InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD: return "TYPE_TEXT_VARIATION_VISIBLE_PASSWORD";
+            case InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT: return "TYPE_TEXT_VARIATION_WEB_EDIT_TEXT";
+            case InputType.TYPE_TEXT_VARIATION_FILTER: return "TYPE_TEXT_VARIATION_FILTER";
+            case InputType.TYPE_TEXT_VARIATION_PHONETIC: return "TYPE_TEXT_VARIATION_PHONETIC";
+            case InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS: return "TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS";
+            case InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD: return "TYPE_TEXT_VARIATION_WEB_PASSWORD";
+            default: return "UNKNOWN";
+        }
+    }
+    private String getImeActionName(int actionId) {
+        switch (actionId) {
+            case EditorInfo.IME_ACTION_UNSPECIFIED: return "IME_ACTION_UNSPECIFIED";
+            case EditorInfo.IME_ACTION_NONE: return "IME_ACTION_NONE";
+            case EditorInfo.IME_ACTION_GO: return "IME_ACTION_GO";
+            case EditorInfo.IME_ACTION_SEARCH: return "IME_ACTION_SEARCH";
+            case EditorInfo.IME_ACTION_SEND: return "IME_ACTION_SEND";
+            case EditorInfo.IME_ACTION_NEXT: return "IME_ACTION_NEXT";
+            case EditorInfo.IME_ACTION_DONE: return "IME_ACTION_DONE";
+            case EditorInfo.IME_ACTION_PREVIOUS: return "IME_ACTION_PREVIOUS";
+            default: return "UNKNOWN";
+        }
+    }
     @Override
     public void onUpdateSelection(int oldSelStart, int oldSelEnd,
                                   int newSelStart, int newSelEnd,
@@ -1719,7 +1818,6 @@ public class SoftKeyboard extends InputMethodService
             }
         }
     }
-
     private boolean translateKeyDown(int keyCode, KeyEvent event) {
         mMetaState = MetaKeyKeyListener.handleKeyDown(mMetaState,
                 keyCode, event);
@@ -1830,129 +1928,8 @@ public class SoftKeyboard extends InputMethodService
         return super.onKeyUp(keyCode, event);
     }
 
-    public void insertEmojiText(String emojiUnicode) {
-        InputConnection ic = getCurrentInputConnection();
-        if (ic == null) return;
-
-        // Begin batch edit for better performance
-        ic.beginBatchEdit();
-
-        // Commit any composing text first to preserve it
-        if (mComposing.length() > 0) {
-            ic.commitText(mComposing, 1);
-            mComposing.setLength(0);  // Clear the composing buffer
-        }
-
-        // Insert the emoji
-        ic.commitText(emojiUnicode, 1);
-
-        // End batch edit
-        ic.endBatchEdit();
-
-        // Update shift key state
-        updateShiftKeyState(getCurrentInputEditorInfo());
-
-        // Reset emoji managers to default after emoji insertion
-        if (normalEmojiManager != null) {
-            normalEmojiManager.resetToDefault();
-        }
-    }
-
-    public boolean isChatTextBox(){
-        return isChatTextBox;
-    }
-
-    /**
-     * Helper method to check if a character is punctuation
-     */
     private boolean isPunctuation(char c) {
         return ".,!?;:()[]{}\"'".indexOf(c) != -1;
-    }
-
-    public void replaceCurrentWordWithEmoji(String emojiUnicode) {
-        InputConnection ic = getCurrentInputConnection();
-        if (ic == null) return;
-
-        Log.d("EmojiDebug", "=== REPLACE CURRENT WORD WITH EMOJI ===");
-        Log.d("EmojiDebug", "Emoji to insert: " + emojiUnicode);
-
-        ic.beginBatchEdit();
-
-        if (mComposing.length() > 0) {
-            // Case 1: We have composing text - use the original method
-            Log.d("EmojiDebug", "Case 1: Replacing composing text");
-            int composingLength = mComposing.length();
-            Log.d("EmojiDebug", "Composing text: '" + mComposing.toString() + "' (length: " + composingLength + ")");
-
-            ic.finishComposingText(); // Commit the composing text
-            ic.deleteSurroundingText(composingLength, 0); // Delete it
-            mComposing.setLength(0); // Clear internal buffer
-
-        } else {
-            // Case 2: No composing text - need to find and replace the current word
-            Log.d("EmojiDebug", "Case 2: No composing text, finding current word in committed text");
-
-            CharSequence textBefore = ic.getTextBeforeCursor(50, 0);
-            CharSequence textAfter = ic.getTextAfterCursor(10, 0);
-
-            if (textBefore == null) textBefore = "";
-            if (textAfter == null) textAfter = "";
-
-            String beforeStr = textBefore.toString();
-            String afterStr = textAfter.toString();
-
-            Log.d("EmojiDebug", "Text before cursor: '" + beforeStr + "'");
-            Log.d("EmojiDebug", "Text after cursor: '" + afterStr + "'");
-
-            // Find the current word boundaries
-            int charsToDeleteBefore = 0;
-            int charsToDeleteAfter = 0;
-
-            // Count characters to delete before cursor (back to start of word)
-            for (int i = beforeStr.length() - 1; i >= 0; i--) {
-                char c = beforeStr.charAt(i);
-                if (Character.isWhitespace(c) || isPunctuation(c)) {
-                    break;
-                }
-                charsToDeleteBefore++;
-            }
-
-            // Count characters to delete after cursor (forward to end of word)
-            for (int i = 0; i < afterStr.length(); i++) {
-                char c = afterStr.charAt(i);
-                if (Character.isWhitespace(c) || isPunctuation(c)) {
-                    break;
-                }
-                charsToDeleteAfter++;
-            }
-
-            Log.d("EmojiDebug", "Characters to delete - before: " + charsToDeleteBefore + ", after: " + charsToDeleteAfter);
-
-            // Delete the current word
-            if (charsToDeleteBefore > 0 || charsToDeleteAfter > 0) {
-                ic.deleteSurroundingText(charsToDeleteBefore, charsToDeleteAfter);
-                Log.d("EmojiDebug", "Deleted current word using deleteSurroundingText(" + charsToDeleteBefore + ", " + charsToDeleteAfter + ")");
-            }
-        }
-
-        // Insert the emoji
-        Log.d("EmojiDebug", "Inserting emoji: " + emojiUnicode);
-        ic.commitText(emojiUnicode, 1);
-
-        ic.endBatchEdit();
-
-        // Debug after operation
-        CharSequence textAfter = ic.getTextBeforeCursor(20, 0);
-        Log.d("EmojiDebug", "Text after operation (20 chars): '" + textAfter + "'");
-        Log.d("EmojiDebug", "=== END REPLACE OPERATION ===");
-
-        // Update shift key state
-        updateShiftKeyState(getCurrentInputEditorInfo());
-
-        // Notify emoji managers to reset to default
-        if (normalEmojiManager != null) {
-            normalEmojiManager.resetToDefault();
-        }
     }
 
     private void commitTyped(InputConnection inputConnection) {
@@ -1992,26 +1969,35 @@ public class SoftKeyboard extends InputMethodService
     }
 
     private void handleBackspace() {
-        final int length = mComposing.length();
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
 
+        CharSequence selectedText = ic.getSelectedText(0);
+        if (selectedText != null && selectedText.length() > 0) {
+            ic.commitText("", 1);
+            Log.d("EmojiDebug", "handleBackspace: deleted selected text (" + selectedText.length() + " chars)");
+            updateShiftKeyState(getCurrentInputEditorInfo());
+            return;
+        }
+
+        final int length = mComposing.length();
         Log.d("EmojiDebug", "handleBackspace: mComposing length before: " + length + ", text: '" + mComposing.toString() + "'");
 
         if (length > 1) {
             mComposing.delete(length - 1, length);
-            getCurrentInputConnection().setComposingText(mComposing, 1);
+            ic.setComposingText(mComposing, 1);
             Log.d("EmojiDebug", "Backspace: removed 1 char from composing, new: '" + mComposing.toString() + "'");
         } else if (length > 0) {
             mComposing.setLength(0);
-            getCurrentInputConnection().commitText("", 0);
+            ic.commitText("", 0);
             Log.d("EmojiDebug", "Backspace: cleared composing text");
         } else {
-            keyDownUp(KeyEvent.KEYCODE_DEL);
-            Log.d("EmojiDebug", "Backspace: sent delete key event (no composing text)");
+            ic.deleteSurroundingText(1, 0);
+            Log.d("EmojiDebug", "Backspace: sent delete single char (no composing text)");
         }
         updateShiftKeyState(getCurrentInputEditorInfo());
     }
 
-    // Update handleClose to always return to normal mode
     private void handleClose() {
         commitTyped(getCurrentInputConnection());
 
@@ -2065,10 +2051,20 @@ public class SoftKeyboard extends InputMethodService
     }
 
     @Override
+    public void onFinishInput() {
+        super.onFinishInput();
+        mComposing.setLength(0);
+        setCandidatesViewShown(false);
+        mCurKeyboard = mQwertyKeyboard;
+        if (mInputView != null) {
+            mInputView.closing();
+        }
+    }
+
+    @Override
     public void onDestroy() {
         cancelDelayedHide();
 
-        hideOverlay();
         super.onDestroy();
     }
 }

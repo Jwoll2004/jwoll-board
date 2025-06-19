@@ -18,6 +18,7 @@
             android:id="@+id/emoji_row_container"
             android:layout_width="match_parent"
             android:layout_height="46dp"
+            android:layout_alignParentTop="true"
             android:orientation="vertical"
             android:background="#FF2C2C2C"
             android:gravity="center_vertical">
@@ -32,12 +33,24 @@
                 android:clipToPadding="false" />
         </LinearLayout>
 
+        <!-- Suggestion Bar -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/suggestion_bar"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_below="@id/emoji_row_container"
+            android:background="#FF1A1A1A"
+            android:visibility="visible"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:clipToPadding="false" />
+
         <!-- Top Bar with Float Toggle -->
         <RelativeLayout
             android:id="@+id/normal_mode_bar"
             android:layout_width="match_parent"
             android:layout_height="40dp"
-            android:layout_below="@id/emoji_row_container"
+            android:layout_below="@id/suggestion_bar"
             android:background="#FF333333"
             android:padding="8dp">
 
