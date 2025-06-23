@@ -113,11 +113,6 @@ public class SoftKeyboard extends InputMethodService
         mWordSeparators = getResources().getString(R.string.word_separators);
 
     }
-    private void debugAutofillState(String context) {
-        EditorInfo ei = getCurrentInputEditorInfo();
-            Log.d("SuggestionDebug", "Current EditorInfo: NULL");
-    }
-
 
     private void logMethodCall(String methodName) {
     }
