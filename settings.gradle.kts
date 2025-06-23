@@ -21,4 +21,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "aosp_poc"
 include(":app")
-include(":keyboard-autofill")
