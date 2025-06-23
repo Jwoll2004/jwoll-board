@@ -1,0 +1,3 @@
+[submodule "keyboard-autofill-library"]
+	path = keyboard-autofill-library
+	url = https://github.com/Jwoll2004/keyboard-autofill-library

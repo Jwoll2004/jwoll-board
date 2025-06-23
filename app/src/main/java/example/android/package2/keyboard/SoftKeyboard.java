@@ -27,13 +27,13 @@ import android.widget.Button;
 import example.android.package2.emoji.manager.EmojiManager;
 import example.android.package2.emoji.extensions.SoftKeyboardEmojiExtensionKt;
 import example.android.package2.sharing.extensions.SoftKeyboardSharingExtensionKt;
-import com.keyboardautofill.AutofillIntegration;
 import androidx.annotation.NonNull;
 import com.example.aosp_poc.R;
 import android.util.Log;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
+import com.keyboardautofill.AutofillIntegration;
 
 public class SoftKeyboard extends InputMethodService
         implements KeyboardView.OnKeyboardActionListener {
@@ -101,6 +101,7 @@ public class SoftKeyboard extends InputMethodService
     private boolean isResizeInProgress = false;
     private android.os.Handler resizeButtonHandler = new android.os.Handler();
     private Runnable hideResizeButtonsRunnable = null;
+
     private AutofillIntegration autofillIntegration;
 
     @Override
@@ -153,7 +154,7 @@ public class SoftKeyboard extends InputMethodService
     @Override
     public View onCreateInputView() {
         logMethodCall("onCreateInputView");
-        View normalLayout = getLayoutInflater().inflate(R.layout.normal_keyboard_layout_with_emoji, null);
+        View normalLayout = getLayoutInflater().inflate(R.layout.keyboard_layout, null);
 
         // Initialize views
         parentContainer = normalLayout.findViewById(R.id.parent_keyboard_container);
@@ -1565,6 +1566,7 @@ public class SoftKeyboard extends InputMethodService
             if (autofillIntegration != null) {
                 autofillIntegration.onFieldChanged();
             }
+
             return;
         }
 
@@ -1648,10 +1650,10 @@ public class SoftKeyboard extends InputMethodService
                 }
                 break;
         }
-
         if (autofillIntegration != null) {
             autofillIntegration.onFieldChanged();
         }
+
     }
     private void sendKey(int keyCode) {
         switch (keyCode) {
@@ -2078,7 +2080,6 @@ public class SoftKeyboard extends InputMethodService
         if (autofillIntegration != null) {
             autofillIntegration.onKeyboardHidden();
         }
-
         super.onFinishInput();
         mComposing.setLength(0);
         setCandidatesViewShown(false);
@@ -2093,7 +2094,6 @@ public class SoftKeyboard extends InputMethodService
         if (autofillIntegration != null) {
             autofillIntegration.onKeyboardHidden();
         }
-
         super.onFinishInputView(finishingInput);
     }
 
