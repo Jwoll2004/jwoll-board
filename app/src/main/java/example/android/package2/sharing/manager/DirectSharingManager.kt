@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import androidx.core.content.FileProvider
 import java.io.File
@@ -122,8 +123,11 @@ class DirectSharingManager(private val context: Context) {
             val file = File(directory, filename)
 
             FileOutputStream(file).use { out ->
-                // Try lossless WebP first
-                var success = bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, 100, out)
+                var success = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, 100, out)
+                } else {
+                    bitmap.compress(Bitmap.CompressFormat.WEBP, 100, out)
+                }
 
                 if (!success) {
                     Log.w(TAG, "Lossless WebP failed, trying regular WebP")

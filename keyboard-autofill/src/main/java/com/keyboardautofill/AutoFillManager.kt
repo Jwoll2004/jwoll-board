@@ -1,9 +1,10 @@
-package example.android.package2.suggestion
+package com.keyboardautofill
 
 import android.inputmethodservice.InputMethodService
 import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import androidx.recyclerview.widget.RecyclerView
 
 /**
  * Main autofill coordination with proper field completion detection
@@ -14,8 +15,13 @@ class AutofillManager(
 ) {
 
     private val formDataManager = FormDataManager(inputMethodService)
-    private val suggestionBarUI = SuggestionBarUI(inputMethodService, rootView) { suggestion ->
-        handleSuggestionSelected(suggestion)
+    private val suggestionBarUI = run {
+        val suggestionBarView = rootView.findViewById<RecyclerView>(
+            rootView.resources.getIdentifier("suggestion_bar", "id", inputMethodService.packageName)
+        )
+        SuggestionBarUI(inputMethodService, suggestionBarView) { suggestion ->
+            handleSuggestionSelected(suggestion)
+        }
     }
 
     private var currentFieldType: FormDataManager.FieldType = FormDataManager.FieldType.UNKNOWN

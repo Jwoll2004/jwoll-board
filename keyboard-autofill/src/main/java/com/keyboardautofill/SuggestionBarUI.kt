@@ -1,4 +1,4 @@
-package example.android.package2.suggestion
+package com.keyboardautofill
 
 import android.inputmethodservice.InputMethodService
 import android.util.Log
@@ -8,14 +8,14 @@ import android.view.inputmethod.InputConnection
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.aosp_poc.R
+
 
 /**
  * Enhanced suggestion display with proper callback handling
  */
 class SuggestionBarUI(
     private val inputMethodService: InputMethodService,
-    private val rootView: View,
+    private val suggestionBarView: RecyclerView,
     private val onSuggestionSelected: ((String) -> Unit)? = null
 ) {
 
@@ -30,22 +30,19 @@ class SuggestionBarUI(
     // Suggestion Bar Setup
 
     private fun setupSuggestionBar() {
-        suggestionBar = rootView.findViewById(R.id.suggestion_bar)
-        suggestionBar?.let { bar ->
-            suggestionAdapter = SuggestionAdapter { suggestion ->
-                onSuggestionClicked(suggestion)
-            }
-
-            bar.adapter = suggestionAdapter
-            bar.layoutManager = LinearLayoutManager(
-                inputMethodService,
-                LinearLayoutManager.HORIZONTAL,
-                false
-            )
-
-            bar.visibility = View.GONE
-            Log.d("SuggestionDebug", "Suggestion bar setup completed")
+        suggestionAdapter = SuggestionAdapter { suggestion ->
+            onSuggestionClicked(suggestion)
         }
+
+        suggestionBarView.adapter = suggestionAdapter
+        suggestionBarView.layoutManager = LinearLayoutManager(
+            inputMethodService,
+            LinearLayoutManager.HORIZONTAL,
+            false
+        )
+
+        suggestionBarView.visibility = View.GONE
+        Log.d("SuggestionDebug", "Suggestion bar setup completed")
     }
 
     // ============================================
@@ -56,11 +53,11 @@ class SuggestionBarUI(
     }
 
     fun showSuggestionBar() {
-        suggestionBar?.visibility = View.VISIBLE
+        suggestionBarView.visibility = View.VISIBLE
     }
 
     fun hideSuggestionBar() {
-        suggestionBar?.visibility = View.GONE
+        suggestionBarView.visibility = View.GONE
     }
 
     // ============================================

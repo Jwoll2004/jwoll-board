@@ -1,11 +1,10 @@
-package example.android.package2.suggestion
+package com.keyboardautofill
 
 import android.content.Context
 import android.content.SharedPreferences
 import android.text.InputType
 import android.util.Log
 import android.view.inputmethod.EditorInfo
-import kotlin.math.exp
 
 class FormDataManager(context: Context) {
 
