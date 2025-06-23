@@ -42,6 +42,7 @@ dependencies {
     implementation(libs.constraintlayout)
     implementation(libs.core.ktx)
     testImplementation(libs.junit)
+    implementation(project(":keyboard-autofill:app"))
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
 }
