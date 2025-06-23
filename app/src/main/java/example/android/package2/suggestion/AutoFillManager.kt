@@ -14,7 +14,9 @@ class AutofillManager(
 ) {
 
     private val formDataManager = FormDataManager(inputMethodService)
-    private val suggestionBarUI = SuggestionBarUI(inputMethodService, rootView)
+    private val suggestionBarUI = SuggestionBarUI(inputMethodService, rootView) { suggestion ->
+        handleSuggestionSelected(suggestion)
+    }
 
     private var currentFieldType: FormDataManager.FieldType = FormDataManager.FieldType.UNKNOWN
     private var previousFieldType: FormDataManager.FieldType = FormDataManager.FieldType.UNKNOWN
@@ -108,7 +110,7 @@ class AutofillManager(
             contentToSave.length >= 2) { // Minimum 2 characters
 
             Log.d("SuggestionDebug", "✓ Saving completed field - type: $previousFieldType, content: '$contentToSave'")
-            formDataManager.storeSuggestion(previousFieldType, contentToSave)
+            formDataManager.learnFromInput(previousFieldType, contentToSave)
         } else {
             Log.d("SuggestionDebug", "✗ Not saving field - invalid conditions")
         }
@@ -129,7 +131,7 @@ class AutofillManager(
             contentToSave.length >= 2) {
 
             Log.d("SuggestionDebug", "✓ Saving current field - type: $currentFieldType, content: '$contentToSave'")
-            formDataManager.storeSuggestion(currentFieldType, contentToSave)
+            formDataManager.learnFromInput(currentFieldType, contentToSave)
         } else {
             Log.d("SuggestionDebug", "✗ Not saving current field - invalid conditions")
         }
@@ -149,8 +151,17 @@ class AutofillManager(
         return hash
     }
 
+    private fun handleSuggestionSelected(suggestion: String) {
+        Log.d("SuggestionDebug", "=== SUGGESTION SELECTED CALLBACK ===")
+        Log.d("SuggestionDebug", "Field: $currentFieldType, Suggestion: '$suggestion'")
+
+        formDataManager.confirmSuggestion(currentFieldType, suggestion)
+
+        Log.d("SuggestionDebug", "Suggestion confirmed for ranking")
+    }
+
     // ============================================
-    // Helper Methods
+    // Helper fxns
 
     private fun getCurrentFieldContent(): String {
         val ic = inputMethodService.currentInputConnection ?: return ""

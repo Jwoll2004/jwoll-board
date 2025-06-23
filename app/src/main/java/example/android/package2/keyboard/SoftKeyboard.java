@@ -115,26 +115,14 @@ public class SoftKeyboard extends InputMethodService
         mInputMethodManager = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         mWordSeparators = getResources().getString(R.string.word_separators);
 
-        Log.d("SuggestionDebug", "SoftKeyboard: onCreate() completed");
     }
     private void debugAutofillState(String context) {
-        Log.d("SuggestionDebug", "=== AUTOFILL DEBUG: " + context + " ===");
-        Log.d("SuggestionDebug", "autofillManager: " + (autofillManager != null ? "INITIALIZED" : "NULL"));
         EditorInfo ei = getCurrentInputEditorInfo();
-        if (ei != null) {
-            Log.d("SuggestionDebug", "Current EditorInfo - package: " + ei.packageName + ", fieldId: " + ei.fieldId);
-            Log.d("SuggestionDebug", "Current EditorInfo - hint: " + ei.hintText + ", inputType: 0x" + Integer.toHexString(ei.inputType));
-        } else {
             Log.d("SuggestionDebug", "Current EditorInfo: NULL");
-        }
-        Log.d("SuggestionDebug", "========================");
     }
 
 
     private void logMethodCall(String methodName) {
-        Log.d("SuggestionDebug", "=== SoftKeyboard." + methodName + " called ===");
-        Log.d("SuggestionDebug", "autofillManager state: " + (autofillManager != null ? "INITIALIZED" : "NULL"));
-        Log.d("SuggestionDebug", "pendingEditorInfo: " + (pendingEditorInfo != null ? "PENDING" : "null"));
     }
     @NonNull
     Context getDisplayContext() {
@@ -203,19 +191,14 @@ public class SoftKeyboard extends InputMethodService
         autofillManager = new AutofillManager(this, normalLayout);
         Log.d("SuggestionDebug", "SoftKeyboard: autofillManager initialized in onCreateInputView");
 
-        // IMPORTANT: Process any pending field focus that happened before autofill was ready
         if (pendingEditorInfo != null) {
-            Log.d("SuggestionDebug", "SoftKeyboard: Processing pending EditorInfo from onStartInput");
+            Log.d("SuggestionDebug", "Processing pending field focus");
             autofillManager.onFieldFocused(pendingEditorInfo);
             pendingEditorInfo = null; // Clear after processing
         }
 
         updateEmojiRowVisibility();
-
-
-        Log.d("softkeyboard", "onCreateInputView completed:");
         return normalLayout;
-
     }
     @Override
     public void onStartInput(EditorInfo attribute, boolean restarting) {
@@ -1554,10 +1537,8 @@ public class SoftKeyboard extends InputMethodService
 
             Log.d("softkeyboard", "Cursor caps mode: " + caps);
 
-            // IMPORTANT: Don't override manual shift/caps lock state
             boolean shouldBeShifted = mCapsLock || caps != 0;
 
-            // If we manually set shift (not caps lock), preserve it
             if (!mCapsLock && mQwertyKeyboard.isShifted()) {
                 shouldBeShifted = true;
                 Log.d("softkeyboard", "Preserving manual shift state");

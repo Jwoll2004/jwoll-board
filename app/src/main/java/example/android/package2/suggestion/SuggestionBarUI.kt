@@ -11,11 +11,12 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.aosp_poc.R
 
 /**
- * Enhanced suggestion display and interaction handling
+ * Enhanced suggestion display with proper callback handling
  */
 class SuggestionBarUI(
     private val inputMethodService: InputMethodService,
-    private val rootView: View
+    private val rootView: View,
+    private val onSuggestionSelected: ((String) -> Unit)? = null
 ) {
 
     private var suggestionBar: RecyclerView? = null
@@ -42,10 +43,8 @@ class SuggestionBarUI(
                 false
             )
 
-            // Start hidden
             bar.visibility = View.GONE
-
-            Log.d("SuggestionManager", "Suggestion bar setup completed")
+            Log.d("SuggestionDebug", "Suggestion bar setup completed")
         }
     }
 
@@ -54,48 +53,48 @@ class SuggestionBarUI(
 
     fun updateSuggestions(suggestions: List<String>) {
         suggestionAdapter?.updateSuggestions(suggestions)
-        Log.d("SuggestionDebug", "SuggestionBarUI: Updated suggestions: ${suggestions.size} items")
     }
 
     fun showSuggestionBar() {
         suggestionBar?.visibility = View.VISIBLE
-        Log.d("SuggestionDebug", "SuggestionBarUI: Suggestion bar shown")
     }
 
     fun hideSuggestionBar() {
         suggestionBar?.visibility = View.GONE
-        Log.d("SuggestionDebug", "SuggestionBarUI: Suggestion bar hidden")
     }
 
     // ============================================
     // User Interaction
 
     private fun onSuggestionClicked(suggestion: String) {
+        Log.d("SuggestionDebug", "=== SUGGESTION UI CLICK ===")
+        Log.d("SuggestionDebug", "User clicked: '$suggestion'")
+
         val inputConnection: InputConnection? = inputMethodService.currentInputConnection
         inputConnection?.let { ic ->
             ic.beginBatchEdit()
 
-            // Get all text in the field
             val textBefore = ic.getTextBeforeCursor(1000, 0) ?: ""
             val textAfter = ic.getTextAfterCursor(1000, 0) ?: ""
 
-            // Clear entire field content
+            Log.d("SuggestionDebug", "Replacing field content with suggestion")
             ic.deleteSurroundingText(textBefore.length, textAfter.length)
-
-            // Insert the suggestion
             ic.commitText(suggestion, 1)
-
             ic.endBatchEdit()
 
-            // Hide suggestions after selection
             hideSuggestionBar()
 
-            Log.d("SuggestionBarUI", "Replaced field content with: '$suggestion'")
+            Log.d("SuggestionDebug", "Applied suggestion to field: '$suggestion'")
         }
+
+        // CRITICAL: Report the selection for ranking
+        Log.d("SuggestionDebug", "Calling onSuggestionSelected callback")
+        onSuggestionSelected?.invoke(suggestion)
+        Log.d("SuggestionDebug", "=== SUGGESTION CLICK COMPLETE ===")
     }
 
     // ============================================
-    // Adapter Implementation
+    // Adapter Implementation (remains the same)
 
     private inner class SuggestionAdapter(
         private val onSuggestionClick: (String) -> Unit
