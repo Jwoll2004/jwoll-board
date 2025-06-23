@@ -1,12 +1,6 @@
 pluginManagement {
     repositories {
-        google {
-            content {
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("androidx.*")
-            }
-        }
+        google()
         mavenCentral()
         gradlePluginPortal()
     }
@@ -21,4 +15,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "aosp_poc"
 include(":app")
-include(":keyboard-autofill:app")
+// Add the submodule as a library
+include(":keyboard-autofill-library")
+project(":keyboard-autofill-library").projectDir = file("keyboard-autofill/app")
