@@ -60,10 +60,6 @@ public class SoftKeyboard extends InputMethodService
     private LatinKeyboard mCurKeyboard;
     private String mWordSeparators;
 
-    private static final String TAG = "FloatingKeyboard";
-    private WindowManager overlayWindowManager;
-    private View overlayView;
-    private boolean isOverlayVisible = false;
     private boolean mKeyboardsInitialized = false;
 
     private RelativeLayout kFrame;
@@ -86,8 +82,6 @@ public class SoftKeyboard extends InputMethodService
 
     private static final float MIN_SCALE = 0.6f;
     private static final float MAX_SCALE = 0.9f;
-    private static final float MIN_SCALE_LANDSCAPE = 0.4f;
-    private static final float MAX_SCALE_LANDSCAPE = 0.9f;
 
     // Position storage
     private static float savedFloatX = Float.NaN;
@@ -115,6 +109,7 @@ public class SoftKeyboard extends InputMethodService
     }
 
     private void logMethodCall(String methodName) {
+        Log.d("Suggestion Debug", " Called - " + methodName);
     }
     @NonNull
     Context getDisplayContext() {
